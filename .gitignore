@@ -1,0 +1,21 @@
+# 번들 (git 쓰면 불필요)
+vtg_bundle.tar.gz
+
+# 실행 산출물
+results/
+__pycache__/
+*.pyc
+
+# 대용량 벤치마크 데이터 (인스턴스에서 직접 받음)
+videos/_bench/
+videos/_norm/
+videos/bench.json
+videos/long.json
+
+# 내가 추가한 영상 (2Y8XQ.mp4 는 데모용이라 포함)
+videos/*.mp4
+!videos/2Y8XQ.mp4
+
+# 프레임 추출물
+sheet*.jpg
+/tmp/

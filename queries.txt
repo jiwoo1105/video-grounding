@@ -1,0 +1,67 @@
+# =============================================================================
+#  질의 문장 목록  —  한 줄에 하나. '#' 로 시작하면 주석(무시됨)
+#
+#  사용:  python vtg_run.py --model safe --video sample.mp4 --query-file queries.txt --plot
+# =============================================================================
+#
+#  ── 작성 기준 (TimeLens 논문 3.1절) ──────────────────────────────────────
+#
+#  ① 명확성   시작과 끝을 눈으로 확정할 수 있는 동작인가
+#             ✗ "the process continues until dry"   ✓ "a man ties shoelaces"
+#
+#  ② 존재성   영상에 실제로 있는 장면인가
+#             (없는 걸 물으면 모델은 아무 구간이나 뱉습니다 — 아래 D 섹션 참고)
+#
+#  ③ 유일성   영상에서 딱 한 번만 일어나는가
+#             ✗ 육상 영상에 "a man runs"           ✓ "a man kneels on the ground"
+#
+#  ④ 누설금지 질문이 답의 위치를 흘리지 않는가
+#             ✗ "ending credits"  ← 영상을 안 봐도 "끝부분"이라 찍으면 맞음
+#             ✓ "the logo appears"
+#
+#  요약:  구체적인 명사 + 명확한 동작 + 영상에서 한 번만
+#
+#  ── 영어로 쓰세요 ────────────────────────────────────────────────────────
+#  세 모델 모두 영어 질의로 학습됐습니다. 한국어도 동작은 하지만 정확도가 떨어집니다.
+#
+# =============================================================================
+
+
+# ─── A. 샘플 영상용 (sample.mp4 — Charades 실내 클립 35초) ───────────────────
+# 다른 영상을 쓰신다면 이 섹션을 지우고 B를 채우세요.
+
+person sitting down in a chair.
+a person opens the door.
+someone is holding a cup.
+
+
+# ─── B. 내 영상용 (여기에 작성) ─────────────────────────────────────────────
+# 위 4가지 기준을 지켜서 쓰세요. 아래는 형태 예시입니다 — 지우고 쓰세요.
+#
+# a woman in a red jacket opens the refrigerator.
+# two people shake hands.
+# a graph appears on the screen for the first time.
+# the camera pans from the desk to the window.
+
+
+# ─── C. 발표용 대비 실험 (선택) ─────────────────────────────────────────────
+# 같은 사건을 서로 다른 정밀도로 물어서 결과가 달라지는지 보여줍니다.
+# "모델이 문장을 실제로 읽고 있다"는 걸 증명하는 용도.
+#
+# a person sits down.
+# a person sits down on a wooden chair near the window.
+
+
+# ─── D. 실패 사례 시연 (발표에서 가장 반응 좋은 부분) ────────────────────────
+# 일부러 기준을 어긴 질의입니다. 모델이 어떻게 무너지는지 보여주세요.
+
+# ② 존재성 위반 — 영상에 없는 사건.
+#    현재 모델들은 "그런 장면 없음"이라고 답하지 못하고 아무 구간이나 뱉습니다.
+#    (no-target rejection 미해결 — 이 분야의 대표적 한계)
+a dog runs across the room.
+
+# ③ 유일성 위반 — 영상 내내 반복되는 동작. 정답을 하나로 정할 수 없음.
+a person is standing.
+
+# ① 명확성 위반 — 시작·끝을 확정할 수 없는 모호한 서술.
+the atmosphere gradually becomes more relaxed.

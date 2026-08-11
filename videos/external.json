@@ -1,0 +1,36 @@
+[
+  {
+    "name": "2Y8XQ",
+    "group": "공식 데모",
+    "desc": "TimeLens 공식 데모 영상 (30.8초). 화장실에서 남자가 물병을 마심",
+    "_정답출처": "프레임을 1초 간격으로 추출해 눈으로 확인한 값 (공식 GT 아님, ±1초 오차 가능)",
+    "queries": [
+      "A man drinks water with a glass",
+      "a man drinks from a plastic water bottle",
+      "a man picks up a bottle from the floor",
+      "a man wipes his face with a pink towel",
+      "a man shakes out a pink towel",
+      "a dog runs across the room"
+    ],
+    "gts": [
+      [17, 19],
+      [17, 19],
+      [4, 6],
+      [26, 28],
+      [0, 3],
+      null
+    ]
+  },
+  {
+    "_사용법": "내 영상을 쓰려면 videos/ 에 mp4 를 넣고 아래 name/path/queries 를 고치세요",
+    "_주의": "파일이 없으면 이 항목은 자동으로 무시됩니다",
+    "name": "my_video",
+    "group": "내 영상",
+    "path": "videos/my_video.mp4",
+    "desc": "직접 추가한 영상",
+    "queries": [
+      "a woman opens the refrigerator",
+      "two people shake hands"
+    ]
+  }
+]
