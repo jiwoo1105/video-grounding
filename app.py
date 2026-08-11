@@ -8,8 +8,7 @@ Video Temporal Grounding — 웹 UI
   ① 서버에 있는 영상 (인스턴스에서 --download-bench 로 받은 것) -> 드롭다운에서 선택
   ② 내 컴퓨터에 있는 영상 -> 끌어다 놓기
 
-벤치마크 영상을 고르면 **사람이 검수한 질의와 정답 구간**이 같이 표시돼서,
-클릭 한 번으로 넣고 결과가 맞는지 바로 확인할 수 있습니다.
+영상을 고르면 미리 준비해둔 질의 목록이 떠서, 클릭 한 번으로 넣을 수 있습니다.
 
 실행 (엘리스 인스턴스에서):
     source ~/vtg-env/bin/activate
@@ -70,7 +69,7 @@ def server_videos():
 
 
 def known_queries():
-    """videos/bench.json + external.json 에서 영상별 질의/정답을 모읍니다."""
+    """videos/bench.json + external.json 에서 영상별 준비된 질의를 모읍니다."""
     out = {}
     for f in ("bench.json", "external.json"):
         p = VIDEO_DIR / f
@@ -99,17 +98,15 @@ def on_pick_video(path):
     if not pairs:
         return path, gr.update(choices=[], value=None, visible=False), ""
 
-    labels = []
-    for q, gt in pairs:
-        labels.append(f"{q}   [정답 {gt[0]:.0f}~{gt[1]:.0f}초]" if gt else q)
+    labels = [q for q, _ in pairs]
     md = (f"**{name}** — 준비된 질의 {len(pairs)}개. "
           "아래에서 고르면 질의창에 채워집니다.")
     return path, gr.update(choices=labels, value=None, visible=True), md
 
 
 def on_pick_query(label):
-    """질의를 고르면 정답 표시를 떼고 질의창에 넣습니다."""
-    return (label or "").split("   [정답")[0].strip()
+    """고른 질의를 질의창에 넣습니다."""
+    return (label or "").strip()
 
 
 # ==========================================================================
@@ -147,51 +144,26 @@ def cut_clip(video, start, end, pad=0.5):
     return str(out)
 
 
-def timeline_png(duration, spans, gt=None):
+def timeline_png(duration, spans):
+    """영상 전체를 가로 막대로 펼치고, 모델이 찾은 구간을 표시합니다."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     out = Path(tempfile.mkdtemp()) / "timeline.png"
-    fig, ax = plt.subplots(figsize=(11, 2.0 if gt else 1.5))
+    fig, ax = plt.subplots(figsize=(11, 1.5))
     ax.barh(0, duration, height=0.45, color="#eeeeee")
     for s, e in spans:
         ax.barh(0, max(e - s, duration * 0.004), left=s, height=0.45, color="#c96343")
-        ax.text((s + e) / 2, 0.32, f"{s:.1f}~{e:.1f}", ha="center", fontsize=8)
-    if gt:
-        ax.barh(-0.6, duration, height=0.45, color="#eeeeee")
-        ax.barh(-0.6, max(gt[1] - gt[0], duration * 0.004), left=gt[0],
-                height=0.45, color="#4c9f70")
-        ax.text((gt[0] + gt[1]) / 2, -0.88, f"{gt[0]:.1f}~{gt[1]:.1f}", ha="center", fontsize=8)
-        # matplotlib 기본 폰트에 한글이 없어 라벨은 영문으로 둡니다 (□□ 방지)
-        ax.set_yticks([0, -0.6])
-        ax.set_yticklabels(["predicted", "ground truth"], fontsize=9)
-        ax.set_ylim(-1.1, 0.6)
-    else:
-        ax.set_yticks([])
-        ax.set_ylim(-0.4, 0.6)
+        ax.text((s + e) / 2, 0.32, f"{s:.1f}~{e:.1f}", ha="center", fontsize=9)
+    ax.set_yticks([])
+    ax.set_ylim(-0.4, 0.6)
     ax.set_xlim(0, duration)
     ax.set_xlabel("time (s)")
     plt.tight_layout()
     plt.savefig(out, dpi=140)
     plt.close(fig)
     return str(out)
-
-
-def tiou(a, b):
-    inter = max(0.0, min(a[1], b[1]) - max(a[0], b[0]))
-    union = max(a[1], b[1]) - min(a[0], b[0])
-    return inter / union if union > 0 else 0.0
-
-
-def find_gt(video, query):
-    """벤치마크 영상이면 이 질의의 정답 구간을 찾아 돌려줍니다."""
-    if not video:
-        return None
-    for q, gt in known_queries().get(Path(video).stem, []):
-        if gt and q.strip().lower() == (query or "").strip().lower():
-            return gt
-    return None
 
 
 def _clip_update(path):
@@ -224,19 +196,13 @@ def run(video, query, model_label, progress=None):
                 "예: `a person walks` → `a woman in a red jacket opens the door`",
                 None, _clip_update(None), r["raw"])
 
-    gt = find_gt(video, query)
     lines = [f"### 결과 — {len(spans)}개 구간", ""]
     for i, (s, e) in enumerate(spans, 1):
         lines.append(f"**{i}. {s:.2f}초 ~ {e:.2f}초**  (길이 {e - s:.2f}초)")
-    if gt:
-        score = tiou(spans[0], gt)
-        mark = "잘 맞음" if score >= 0.5 else ("아쉬움" if score >= 0.3 else "빗나감")
-        lines += ["", f"정답: **{gt[0]:.2f}초 ~ {gt[1]:.2f}초**",
-                  f"**tIoU = {score:.3f}**  ({mark})"]
     lines += ["", f"영상 {dur:.1f}초 · {r['latency_s']}초 소요 · "
                   f"VRAM {r['peak_vram_gb']}GB · 모델 `{key}`"]
 
-    png = timeline_png(dur, spans, gt)
+    png = timeline_png(dur, spans)
     try:
         clip = cut_clip(video, spans[0][0], spans[0][1])
     except Exception:            # noqa: BLE001  ffmpeg 없으면 클립 칸을 아예 숨김
@@ -263,7 +229,7 @@ def build_ui():
                 video = gr.Video(label="영상 — 위에서 고르거나 여기에 끌어다 놓기", height=280)
 
                 hint = gr.Markdown()
-                qpick = gr.Dropdown([], label="준비된 질의 (정답 포함)", visible=False)
+                qpick = gr.Dropdown([], label="준비된 질의", visible=False)
 
                 query = gr.Textbox(
                     label="찾을 장면 (영어)",
@@ -286,7 +252,7 @@ def build_ui():
                 )
             with gr.Column(scale=1):
                 out_md = gr.Markdown()
-                out_png = gr.Image(label="타임라인 (예측 / 정답)", height=200)
+                out_png = gr.Image(label="타임라인 — 모델이 찾은 구간", height=170)
                 out_clip = gr.Video(label="찾은 구간 (앞뒤 0.5초 여유)",
                                     height=300, visible=False)
                 with gr.Accordion("모델 원본 출력", open=False):
