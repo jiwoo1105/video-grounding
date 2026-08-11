@@ -54,11 +54,11 @@ def is_downloaded(key):
 
 
 def model_note(label):
+    """아직 안 받은 모델일 때만 경고를 띄웁니다. 다 받아뒀으면 아무것도 안 보입니다."""
     key = LABEL2KEY[label]
     if is_downloaded(key):
-        return f"`{V.MODELS[key]['repo']}` — 이미 받아둔 모델입니다."
-    return (f"`{V.MODELS[key]['repo']}` — **아직 안 받은 모델입니다.** "
-            "처음 실행할 때 다운로드로 몇 분 걸립니다.")
+        return ""
+    return f"⏳ `{V.MODELS[key]['repo']}` — 첫 실행 시 다운로드로 몇 분 걸립니다."
 
 
 # ==========================================================================
@@ -194,11 +194,17 @@ def find_gt(video, query):
     return None
 
 
-def run(video, query, model_label, attn, progress=None):
+def _clip_update(path):
+    """클립을 못 만들면(ffmpeg 없음) 칸 자체를 숨깁니다."""
+    import gradio as gr
+    return gr.update(value=path, visible=bool(path))
+
+
+def run(video, query, model_label, progress=None):
     if not video:
-        return "영상을 고르거나 올려주세요.", None, None, ""
+        return "영상을 고르거나 올려주세요.", None, _clip_update(None), ""
     if not (query or "").strip():
-        return "찾을 장면을 문장으로 써주세요.", None, None, ""
+        return "찾을 장면을 문장으로 써주세요.", None, _clip_update(None), ""
 
     key = LABEL2KEY[model_label]
     dur = V.video_duration(video)
@@ -206,7 +212,7 @@ def run(video, query, model_label, attn, progress=None):
 
     if progress:
         progress(0.1, desc=f"모델 준비 중… ({key}, 첫 실행은 다운로드로 몇 분)")
-    g = get_grounder(key, tokens, fps, attn)
+    g = get_grounder(key, tokens, fps, "sdpa")   # flash-attn 은 별도 설치 필요
 
     if progress:
         progress(0.5, desc=f"영상 분석 중… ({dur:.0f}초, {tokens} 토큰 / {fps}fps)")
@@ -216,7 +222,7 @@ def run(video, query, model_label, attn, progress=None):
     if not spans:
         return ("**구간을 찾지 못했습니다.** 문장을 더 구체적으로 바꿔보세요.\n\n"
                 "예: `a person walks` → `a woman in a red jacket opens the door`",
-                None, None, r["raw"])
+                None, _clip_update(None), r["raw"])
 
     gt = find_gt(video, query)
     lines = [f"### 결과 — {len(spans)}개 구간", ""]
@@ -233,9 +239,9 @@ def run(video, query, model_label, attn, progress=None):
     png = timeline_png(dur, spans, gt)
     try:
         clip = cut_clip(video, spans[0][0], spans[0][1])
-    except Exception:            # noqa: BLE001  ffmpeg 없어도 결과는 보여줌
+    except Exception:            # noqa: BLE001  ffmpeg 없으면 클립 칸을 아예 숨김
         clip = None
-    return "\n".join(lines), png, clip, r["raw"]
+    return "\n".join(lines), png, _clip_update(clip), r["raw"]
 
 
 # ==========================================================================
@@ -266,8 +272,6 @@ def build_ui():
                 model = gr.Dropdown([c[0] for c in CHOICES], value=CHOICES[0][0],
                                     label="모델")
                 mnote = gr.Markdown(model_note(CHOICES[0][0]))
-                attn = gr.Radio(["sdpa", "flash_attention_2"], value="sdpa",
-                                label="attention (flash 는 설치돼 있을 때만)")
                 btn = gr.Button("장면 찾기", variant="primary", size="lg")
 
                 gr.Markdown(
@@ -283,7 +287,8 @@ def build_ui():
             with gr.Column(scale=1):
                 out_md = gr.Markdown()
                 out_png = gr.Image(label="타임라인 (예측 / 정답)", height=200)
-                out_clip = gr.Video(label="찾은 구간 (앞뒤 0.5초 여유)", height=300)
+                out_clip = gr.Video(label="찾은 구간 (앞뒤 0.5초 여유)",
+                                    height=300, visible=False)
                 with gr.Accordion("모델 원본 출력", open=False):
                     out_raw = gr.Textbox(lines=6, show_label=False)
 
@@ -292,10 +297,10 @@ def build_ui():
         qpick.change(on_pick_query, qpick, query)
         model.change(model_note, model, mnote)      # 안 받은 모델이면 미리 알려줌
 
-        def _run(v, q, m, a, progress=gr.Progress()):
-            return run(v, q, m, a, progress)
+        def _run(v, q, m, progress=gr.Progress()):
+            return run(v, q, m, progress)
 
-        btn.click(_run, [video, query, model, attn],
+        btn.click(_run, [video, query, model],
                   [out_md, out_png, out_clip, out_raw])
     return demo
 
