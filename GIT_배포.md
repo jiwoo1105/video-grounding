@@ -1,106 +1,114 @@
-# GitHub 로 올리고 인스턴스에서 clone 하기
+# GitHub 배포 — 남은 건 2단계뿐
 
-로컬 폴더는 **이미 git 저장소로 초기화되고 커밋까지 끝나 있습니다.**
-GitHub에 레포만 만들어 push 하면 됩니다.
+로컬 준비는 **전부 끝났습니다.**
 
----
+- git 저장소 초기화 ✅
+- 20개 파일 커밋 완료 (2.4MB) ✅
+- 브랜치 `main` 으로 설정 ✅
+- 원격 주소 `https://github.com/jiwoo1105/video-grounding.git` 등록 ✅
 
-## 1. GitHub 레포 만들기
-
-### 방법 A — 웹에서 (가장 확실)
-
-1. <https://github.com/new> 접속
-2. `Repository name` 에 **`video-grounding`** 입력
-3. **Public** 선택 ← 중요. Private 이면 인스턴스에서 clone 할 때 토큰이 필요합니다
-4. **README, .gitignore, license 는 전부 체크 해제** (이미 있어서 충돌합니다)
-5. `Create repository`
-
-### 방법 B — gh CLI 가 있다면 한 줄
-
-```bash
-cd ~/Documents/Video_grounding
-gh repo create video-grounding --public --source=. --push
-```
-
-이러면 3번(push)까지 한 번에 끝납니다.
+이제 **GitHub에 빈 레포를 만들고 push** 하면 됩니다.
 
 ---
 
-## 2. 맥에서 push
+## 1단계 — GitHub에서 빈 레포 만들기
 
-방법 A로 만드셨다면, 맥 터미널에서:
+<https://github.com/new> 접속 후:
+
+| 항목 | 값 |
+|---|---|
+| Repository name | **`video-grounding`** ← 정확히 이 이름 |
+| 공개 범위 | **Public** ← Private 이면 인스턴스 clone 시 토큰 필요 |
+| Add a README file | **체크 해제** |
+| Add .gitignore | **None** |
+| Choose a license | **None** |
+
+**아래 3개를 반드시 체크 해제하세요.** 파일이 이미 있어서 충돌합니다.
+
+`Create repository` 클릭.
+
+---
+
+## 2단계 — 맥 터미널에서 push
 
 ```bash
 cd ~/Documents/Video_grounding
-
-git remote add origin https://github.com/<내아이디>/video-grounding.git
-git branch -M main
 git push -u origin main
 ```
 
-`<내아이디>` 를 본인 GitHub 아이디로 바꾸세요.
+**이 한 줄이 전부입니다.** 원격 주소와 브랜치는 이미 설정돼 있습니다.
 
-> 비밀번호를 물으면 **GitHub 계정 비밀번호가 아니라 Personal Access Token** 이 필요합니다.
-> <https://github.com/settings/tokens> → `Generate new token (classic)` → `repo` 체크 → 생성 후 그 값을 붙여넣기.
+### 인증을 물어보면
+
+`Username` 에 `jiwoo1105`, `Password` 에는 **계정 비밀번호가 아니라 토큰**을 넣어야 합니다.
+
+1. <https://github.com/settings/tokens> → `Generate new token` → `Generate new token (classic)`
+2. `Note` 에 아무 이름, `Expiration` 은 30 days 정도
+3. **`repo` 체크박스만 선택**
+4. `Generate token` → 나온 문자열 복사 (한 번만 보입니다)
+5. 터미널 `Password` 자리에 붙여넣기 (화면에 안 보이는 게 정상)
+
+> 맥에서 GitHub Desktop 이나 `gh` CLI 를 이미 쓰고 계셨다면 인증을 안 물어볼 수도 있습니다.
 
 ---
 
-## 3. 인스턴스에서 clone
+## 3단계 — 인스턴스에서 clone
 
 엘리스 VSCode 터미널에서:
 
 ```bash
 cd ~
-git clone https://github.com/<내아이디>/video-grounding.git Video_grounding
+rm -rf Video_grounding                       # 아까 만든 빈 폴더 정리
+git clone https://github.com/jiwoo1105/video-grounding.git Video_grounding
 cd Video_grounding
 ls
 ```
 
 `app.py`, `vtg_run.py`, `videos/2Y8XQ.mp4` 가 보이면 성공입니다.
-**영상(2.2MB)도 레포에 포함돼 있어서 따로 받을 필요 없습니다.**
-
-VSCode에서 `File` → `Open Folder` → `/home/elicer/Video_grounding` 을 열면
-편집기에서도 파일이 보입니다. (안 열어도 터미널로 다 됩니다)
+**폴더 열기도 업로드도 필요 없습니다.**
 
 ---
 
-## 4. 이어서 실행
+## 4단계 — 실행
 
 ```bash
-bash setup_env.sh                 # 10~15분. "y" 누르면 모델도 미리 받음
+bash setup_env.sh                 # 10~15분. "지금 다운로드?" -> y
 source ~/vtg-env/bin/activate
+sudo apt-get install -y ffmpeg    # 없다고 나오면
 
 python3 app.py                    # 웹 UI
 ```
 
-이후는 `실행순서.md` 4번부터 그대로입니다.
+터미널에 뜨는 포트 알림을 클릭하거나, 안 뜨면 `python3 app.py --share`.
+
+이후는 `실행순서.md` 6번(사용법)부터 그대로입니다.
 
 ---
 
-## 코드를 고쳤을 때
-
-맥에서 고치고 push → 인스턴스에서 pull:
+## 코드 수정 후 동기화
 
 ```bash
-# 맥
+# 맥에서
 git add -A && git commit -m "수정" && git push
 
-# 인스턴스
+# 인스턴스에서
 cd ~/Video_grounding && git pull
 ```
 
 ---
 
-## 레포에 들어간 것 / 안 들어간 것
+## 레포에 들어간 것
 
-| 포함 | 제외 (`.gitignore`) |
+| 파일 | 용도 |
 |---|---|
-| 코드 6개 (`app.py`, `demo.py`, `vtg_run.py` 등) | `vtg_bundle.tar.gz` |
-| 문서 8개 | `videos/_bench/` (수 GB 벤치마크) |
-| `videos/2Y8XQ.mp4` (2.2MB 데모 영상) | `results/`, `__pycache__/` |
-| `videos/external.json` (질의 + 정답) | 내가 추가한 다른 영상 |
+| `app.py` | 웹 UI (모델 4종 드롭다운) |
+| `demo.py` | UI 단일파일 버전 (백업용) |
+| `vtg_run.py` | 단발 추론 CLI |
+| `run_experiments.py` | 일괄 실험 + 리포트 |
+| `setup_env.sh` | 환경 구성 |
+| `test_vtg_run.py` / `test_e2e.py` | GPU 없이 검증 (124개) |
+| `videos/2Y8XQ.mp4` | 데모 영상 2.2MB |
+| `videos/external.json` | 질의 6개 + 정답 시각 |
+| 문서 9개 | 실행순서, 영상분석, 논문정리 등 |
 
-총 **2.4MB** 라 push/clone 모두 몇 초면 끝납니다.
-
-> 내 영상을 레포에 넣고 싶다면 `.gitignore` 의 `videos/*.mp4` 줄을 지우거나,
-> `git add -f videos/내영상.mp4` 로 강제 추가하세요.
+`.gitignore` 로 제외: `vtg_bundle.tar.gz`, `videos/_bench/`(수 GB), `results/`, `__pycache__/`
