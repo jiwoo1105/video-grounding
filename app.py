@@ -285,5 +285,12 @@ if __name__ == "__main__":
 
     vids = [v for v in server_videos() if v != NONE]
     print(f"서버 영상 {len(vids)}개: {', '.join(Path(v).name for v in vids) or '없음'}")
-    build_ui().launch(server_name="0.0.0.0", server_port=args.port,
-                      share=args.share, show_error=True)
+    # allowed_paths: Gradio 는 보안상 허용된 경로의 파일만 브라우저에 내보냅니다.
+    #   videos/ 를 넣어야 드롭다운으로 고른 서버 영상이 재생됩니다 (없으면 404).
+    # max_file_size: 업로드 상한. 기본값이 낮아 큰 영상이 막히는 경우가 있습니다.
+    build_ui().launch(
+        server_name="0.0.0.0", server_port=args.port,
+        share=args.share, show_error=True,
+        allowed_paths=[str(VIDEO_DIR.resolve()), str(Path(tempfile.gettempdir()))],
+        max_file_size="500mb",
+    )
