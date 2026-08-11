@@ -4,7 +4,7 @@
 #  대상 모델 : Time-R1-7B (Qwen2.5-VL 계열) + TimeLens2-8B (Qwen3-VL 계열)
 #  검증 GPU  : A100 (sm_80) / H100 (sm_90) / RTX 5090 (sm_120)
 #
-#  cu128 휠 하나로 세 아키텍처를 모두 커버하므로 GPU별 분기가 필요 없습니다.
+#  드라이버 버전에 맞춰 cu126 / cu128 휠을 자동으로 고릅니다.
 #
 #  실행:  bash setup_env.sh
 # =============================================================================
@@ -47,14 +47,24 @@ pip install -q --upgrade pip wheel setuptools
 
 echo ""
 echo "=============================================="
-echo " [2/5] PyTorch (cu128) 설치"
+echo " [2/5] PyTorch 설치 (드라이버에 맞춰 자동 선택)"
 echo "=============================================="
 # ★ 가장 중요한 단계 ★
-# 5090은 sm_120이라 PyTorch 2.7.0 + cu128 이상이어야 합니다.
-# Time-R1 공식 레포가 지정한 torch 2.6 + cu124를 그대로 깔면
-#   RuntimeError: CUDA error: no kernel image is available for execution on the device
-# 로 즉시 죽습니다. 공식 requirements.txt를 따라가지 마세요.
-pip install --index-url https://download.pytorch.org/whl/cu128 \
+# 드라이버가 지원하는 CUDA 버전에 맞춰 휠을 고릅니다.
+#   드라이버 570+ (CUDA 12.8)  -> cu128   (5090 Blackwell 은 이것만 가능)
+#   드라이버 525+ (CUDA 12.x)  -> cu126   (A100/H100 에 안전한 선택)
+# CUDA 는 12.x 안에서 마이너 버전 호환이 되지만, 굳이 위험을 감수할 이유가 없습니다.
+#
+# Time-R1 공식 레포가 지정한 torch 2.6 + cu124 를 그대로 쓰면
+# 최신 GPU(sm_120)에서 "no kernel image is available" 로 죽습니다.
+# 공식 requirements.txt 를 따라가지 마세요.
+if [ "${DRIVER}" -ge 570 ]; then
+    CU=cu128
+else
+    CU=cu126
+fi
+echo "드라이버 ${DRIVER}.x -> ${CU} 휠 설치"
+pip install --index-url "https://download.pytorch.org/whl/${CU}" \
     torch torchvision
 
 echo ""
@@ -84,7 +94,7 @@ echo 'export HF_HUB_ENABLE_HF_TRANSFER=1' >> ~/.bashrc
 
 echo ""
 echo "=============================================="
-echo " [4/5] sm_120 커널 동작 검증"
+echo " [4/5] GPU 커널 동작 검증"
 echo "=============================================="
 python3 - <<'PY'
 import sys, torch
@@ -97,7 +107,8 @@ print("compute cap  :", f"{cc[0]}.{cc[1]}")
 print("arch list    :", torch.cuda.get_arch_list())
 
 if f"sm_{cc[0]}{cc[1]}" not in torch.cuda.get_arch_list():
-    print("\n!! 이 torch 빌드에 sm_%d%d 커널이 없습니다. cu128 휠을 다시 설치하세요." % cc)
+    print("\n!! 이 torch 빌드에 sm_%d%d 커널이 없습니다." % cc)
+    print("   다른 CUDA 휠로 재시도:  pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision")
     sys.exit(1)
 
 # 실제 커널 실행까지 확인 (arch_list에 있어도 실행이 깨지는 경우가 있음)
