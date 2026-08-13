@@ -218,7 +218,8 @@ def video_duration(path):
 
 # --------------------------------------------------------------------------
 class Grounder:
-    def __init__(self, key, total_tokens=None, attn="sdpa", fps=2.0, style=None):
+    def __init__(self, key, total_tokens=None, attn="sdpa", fps=2.0, style=None,
+                 max_frames=None):
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         cfg = MODELS[key]
@@ -226,6 +227,11 @@ class Grounder:
         self.family = cfg["family"]
         self.style = STYLES[style or cfg["style"]]
         self.fps = fps
+        # 프레임 상한. None 이면 qwen-vl-utils 기본값 768 프레임이 적용됩니다
+        # (fps=2 기준 384초 분량). 그 이상은 균등 서브샘플링됩니다.
+        # TimeLens 공식 스크립트는 filter/GRPO 단계에서만 이 값을 쓰고
+        # (total_tokens / min_tokens * 2 = 448), 평가 스크립트에는 노출하지 않습니다.
+        self.max_frames = max_frames
 
         px = cfg["patch"] * 2                 # merge 후 토큰 한 변의 픽셀 수
         self.total_pixels = (total_tokens or cfg["tokens"]) * px * px
@@ -309,6 +315,8 @@ class Grounder:
             "fps": self.fps,
             "min_pixels": self.min_pixels, "total_pixels": self.total_pixels,
         }
+        if self.max_frames:                      # 지정했을 때만 상한을 겁니다
+            vid["max_frames"] = int(self.max_frames)
         text_part = {"type": "text", "text": self.style["prompt"].format(query)}
 
         messages = []
@@ -398,7 +406,11 @@ def main():
     ap.add_argument("--query-file", help="한 줄에 하나씩 질의를 담은 텍스트 파일")
     ap.add_argument("--total-tokens", type=int, default=None,
                     help="비주얼 토큰 예산. OOM이면 절반으로")
-    ap.add_argument("--fps", type=float, default=2.0)
+    ap.add_argument("--fps", type=float, default=2.0,
+                    help="프레임 샘플링 fps (공식 기본값 2)")
+    ap.add_argument("--max-frames", type=int, default=None,
+                    help="프레임 수 상한. 미지정 시 qwen-vl-utils 기본 768 "
+                         "(fps=2 기준 384초). TimeLens 공식 filter 스크립트는 448 사용")
     ap.add_argument("--max-new-tokens", type=int, default=512)
     ap.add_argument("--attn", default="sdpa",
                     choices=["sdpa", "eager", "flash_attention_2"])
@@ -445,7 +457,8 @@ def main():
         for k in keys:                       # 순차 로드 -> 해제 (동시 적재 불가)
             g = None
             try:
-                g = Grounder(k, args.total_tokens, args.attn, args.fps, args.style)
+                g = Grounder(k, args.total_tokens, args.attn, args.fps, args.style,
+                             max_frames=args.max_frames)
                 for q in queries:
                     r = g(args.video, q, args.max_new_tokens)
                     r["video"], r["duration"] = args.video, round(dur, 2)
