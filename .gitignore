@@ -24,3 +24,6 @@ sheet*.jpg
 smpl_eval/outputs/
 smpl_eval/results/
 Captured-Motion-Dataset/
+
+# smpl_eval 로컬 venv
+.venv-smpl/
