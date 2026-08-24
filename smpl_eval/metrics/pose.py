@@ -6,7 +6,8 @@ PA-MPJPE 를 주 지표로 쓰는 이유: 관절 회전은 키네매틱 트리�
 """
 import numpy as np
 
-from smpl_eval.conventions import common_indices
+from smpl_eval.conventions import (
+    common_indices, skeleton_scale, CANONICAL_SKELETON_SCALE_MM)
 
 
 def _procrustes(pred, gt):
@@ -28,11 +29,24 @@ def _procrustes(pred, gt):
     return out
 
 
-def pa_mpjpe(pred_j, gt_j):
-    """Procrustes 정렬 후 관절 평균 오차 (mm). 입력 단위는 m."""
+def pa_mpjpe(pred_j, gt_j, normalize=False):
+    """Procrustes 정렬 후 관절 평균 오차.
+
+    normalize=False → GT 좌표계 단위 × 1000 ("입력이 m 라면 mm").
+    normalize=True  → GT 골격 크기로 나눈 뒤 표준 인체 크기를 곱한 값(mm).
+
+    GT 가 SfM 재구성이라 데이터셋마다 스케일이 다르면 normalize=True 를
+    써야 한다. Procrustes 는 스케일을 맞추므로 잔차가 GT 단위로 나오는데,
+    그 단위 자체가 데이터셋마다 다르기 때문이다.
+    """
     gt_j = np.asarray(gt_j, float)
     aligned = _procrustes(pred_j, gt_j)
-    return np.linalg.norm(aligned - gt_j, axis=-1).mean(-1) * 1000.0
+    err = np.linalg.norm(aligned - gt_j, axis=-1).mean(-1)
+    if normalize:
+        sc = skeleton_scale(gt_j)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(sc > 0, err / sc, np.nan) * CANONICAL_SKELETON_SCALE_MM
+    return err * 1000.0
 
 
 def mpjpe(pred_j, gt_j, root_idx=0):
@@ -73,7 +87,7 @@ def pose_metrics(pred, gt, mapping, frame_offset=0):
     shifted = dict(pred)
     shifted["frame_ids"] = np.asarray(pred["frame_ids"]) + frame_offset
 
-    pa, mp = [], []
+    pa, mp, scales = [], [], []
     gt_frames = set(np.unique(gt["frame_ids"]).tolist())
     for f in np.unique(pred["frame_ids"]):
         gf = int(f) + frame_offset
@@ -89,7 +103,8 @@ def pose_metrics(pred, gt, mapping, frame_offset=0):
             ok = np.isfinite(gj).all(-1) & np.isfinite(pj).all(-1)
             if ok.sum() < 6:                 # 관절이 너무 적으면 정렬이 불안정
                 continue
-            pa.append(pa_mpjpe(pj[None, ok], gj[None, ok])[0])
+            pa.append(pa_mpjpe(pj[None, ok], gj[None, ok], normalize=True)[0])
+            scales.append(float(skeleton_scale(gj[ok])))
             if pelvis_pos is not None and ok[pelvis_pos]:
                 # 필터링으로 인덱스가 밀리므로 살아남은 관절 중 골반의 위치를 다시 센다
                 root = int(ok[:pelvis_pos].sum())
@@ -97,9 +112,20 @@ def pose_metrics(pred, gt, mapping, frame_offset=0):
 
     if not pa:
         return {"pa_mpjpe": float("nan"), "pa_mpjpe_p95": float("nan"),
-                "mpjpe": float("nan"), "mpjpe_available": False, "n_matched": 0}
-    return {"pa_mpjpe": float(np.mean(pa)),
+                "mpjpe": float("nan"), "mpjpe_available": False,
+                "gt_scale": float("nan"), "n_matched": 0}
+    pa = np.asarray(pa, float)
+    pa = pa[np.isfinite(pa)]
+    if pa.size == 0:
+        return {"pa_mpjpe": float("nan"), "pa_mpjpe_p95": float("nan"),
+                "mpjpe": float("nan"), "mpjpe_available": False,
+                "gt_scale": float("nan"), "n_matched": 0}
+    # mpjpe 는 GT 단위 그대로라 스케일 보정을 따로 적용한다
+    scale_corr = (CANONICAL_SKELETON_SCALE_MM
+                  / (float(np.mean(scales)) * 1000.0)) if scales else 1.0
+    return {"pa_mpjpe": float(pa.mean()),
             "pa_mpjpe_p95": float(np.percentile(pa, 95)),
-            "mpjpe": float(np.mean(mp)) if mp else float("nan"),
+            "mpjpe": float(np.mean(mp) * scale_corr) if mp else float("nan"),
             "mpjpe_available": bool(mp),
-            "n_matched": len(pa)}
+            "gt_scale": float(np.mean(scales)) if scales else float("nan"),
+            "n_matched": int(len(pa))}

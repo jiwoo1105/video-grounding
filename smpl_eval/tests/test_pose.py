@@ -1,6 +1,8 @@
 import numpy as np
 from smpl_eval.conventions import (
-    SMPL24, H36M17, COCO17, H36M17_TO_SMPL24, COCO17_TO_SMPL24, common_indices)
+    SMPL24, COCO17, COCO19, COCO17_TO_SMPL24, COCO19_TO_SMPL24,
+    DATASET_CONVENTION, common_indices, skeleton_scale,
+    CANONICAL_SKELETON_SCALE_MM)
 from smpl_eval.metrics.pose import pa_mpjpe, mpjpe, reprojection_error
 
 
@@ -9,10 +11,25 @@ def test_smpl24_has_24_named_joints():
     assert SMPL24[0] == "pelvis" and SMPL24[23] == "right_hand"
 
 
-def test_h36m17_has_17_joints_in_bvh_order():
-    assert len(H36M17) == 17
-    assert H36M17[0] == "Hip" and H36M17[16] == "RightWrist"
-    assert H36M17[10] == "Head"
+def test_coco19_is_coco17_plus_two_feet():
+    assert len(COCO19) == 19
+    assert COCO19[:17] == COCO17
+    assert COCO19[17] == "left_foot" and COCO19[18] == "right_foot"
+
+
+def test_dataset_convention_table_is_consistent():
+    assert DATASET_CONVENTION["Data1"][0] == 19
+    for ds in ("Data2", "Data3", "Data4"):
+        assert DATASET_CONVENTION[ds][0] == 17
+        assert DATASET_CONVENTION[ds][1] is COCO17_TO_SMPL24
+
+
+def test_skeleton_scale_is_positive_and_scales_linearly():
+    from smpl_eval.tests.synth import _tpose
+    j = _tpose()
+    s1 = float(skeleton_scale(j))
+    assert abs(s1 * 1000 - CANONICAL_SKELETON_SCALE_MM) < 1.0
+    assert abs(float(skeleton_scale(j * 3.0)) - s1 * 3.0) < 1e-6
 
 
 def test_coco17_has_17_joints():
@@ -20,22 +37,22 @@ def test_coco17_has_17_joints():
 
 
 def test_mapping_targets_are_valid_indices():
-    for src, table, n_src in (("h36m", H36M17_TO_SMPL24, 17),
-                              ("coco", COCO17_TO_SMPL24, 17)):
+    for src, table, n_src in (("coco19", COCO19_TO_SMPL24, 19),
+                              ("coco17", COCO17_TO_SMPL24, 17)):
         for g, s in table.items():
             assert 0 <= g < n_src, (src, g)
             assert 0 <= s < 24, (src, s)
 
 
 def test_mapping_targets_are_unique():
-    for table in (H36M17_TO_SMPL24, COCO17_TO_SMPL24):
+    for table in (COCO19_TO_SMPL24, COCO17_TO_SMPL24):
         v = list(table.values())
         assert len(v) == len(set(v)), "두 GT 관절이 같은 SMPL 슬롯에 매핑됨"
 
 
 def test_common_indices_are_aligned_and_same_length():
-    gi, si = common_indices(H36M17_TO_SMPL24)
-    assert len(gi) == len(si) == 17
+    gi, si = common_indices(COCO19_TO_SMPL24)
+    assert len(gi) == len(si) == 14     # 12 + 발 2개
     gi2, si2 = common_indices(COCO17_TO_SMPL24)
     assert len(gi2) == len(si2) == 12   # 얼굴 5개는 SMPL 대응 없음
 
@@ -100,41 +117,50 @@ def _pair(mapping, n_frames=10, offset=0.0, seed=11):
 
 def test_pose_metrics_matches_every_frame():
     from smpl_eval.metrics.pose import pose_metrics
-    pred, gt = _pair(H36M17_TO_SMPL24, n_frames=10)
-    r = pose_metrics(pred, gt, H36M17_TO_SMPL24)
+    pred, gt = _pair(COCO19_TO_SMPL24, n_frames=10)
+    r = pose_metrics(pred, gt, COCO19_TO_SMPL24)
     assert r["n_matched"] == 20          # 10프레임 x 2명
     assert r["pa_mpjpe"] < 1e-3
 
 
-def test_pose_metrics_mpjpe_available_with_h36m_pelvis():
+def test_pose_metrics_mpjpe_unavailable_without_pelvis():
     from smpl_eval.metrics.pose import pose_metrics
-    pred, gt = _pair(H36M17_TO_SMPL24)
-    r = pose_metrics(pred, gt, H36M17_TO_SMPL24)
-    assert r["mpjpe_available"] is True
-    assert r["mpjpe"] < 1e-3
-
-
-def test_pose_metrics_mpjpe_unavailable_for_coco_without_pelvis():
-    """Data1 규약에는 골반이 없다 — MPJPE 를 조용히 틀리게 내지 말 것."""
-    from smpl_eval.metrics.pose import pose_metrics
-    pred, gt = _pair(COCO17_TO_SMPL24)
-    r = pose_metrics(pred, gt, COCO17_TO_SMPL24)
+    pred, gt = _pair(COCO19_TO_SMPL24)
+    r = pose_metrics(pred, gt, COCO19_TO_SMPL24)
+    # COCO 계열에는 골반이 없다 — MPJPE 를 조용히 틀리게 내지 말 것
     assert r["mpjpe_available"] is False
     assert np.isnan(r["mpjpe"])
-    assert r["pa_mpjpe"] < 1e-3          # PA-MPJPE 는 골반 없어도 유효
+
+
+def test_pa_mpjpe_is_scale_invariant_when_normalized():
+    """GT 스케일이 3배여도 정규화 PA-MPJPE 는 같아야 한다."""
+    from smpl_eval.metrics.pose import pose_metrics
+    pred, gt = _pair(COCO17_TO_SMPL24, seed=21)
+    pred = {k: v.copy() for k, v in pred.items()}
+    pred["joints3d"] = pred["joints3d"] + 0.02      # 약간 어긋나게
+    small = pose_metrics(pred, gt, COCO17_TO_SMPL24)
+
+    big_pred = {k: v.copy() for k, v in pred.items()}
+    big_gt = {k: v.copy() for k, v in gt.items()}
+    big_pred["joints3d"] = big_pred["joints3d"] * 3.0
+    big_gt["joints3d"] = big_gt["joints3d"] * 3.0
+    big = pose_metrics(big_pred, big_gt, COCO17_TO_SMPL24)
+
+    assert abs(small["pa_mpjpe"] - big["pa_mpjpe"]) < 1e-3, (small, big)
+    assert big["gt_scale"] > small["gt_scale"] * 2.5
 
 
 def test_pose_metrics_pa_mpjpe_ignores_pure_translation():
     from smpl_eval.metrics.pose import pose_metrics
-    pred, gt = _pair(H36M17_TO_SMPL24, offset=0.5)
-    r = pose_metrics(pred, gt, H36M17_TO_SMPL24)
+    pred, gt = _pair(COCO19_TO_SMPL24, offset=0.5)
+    r = pose_metrics(pred, gt, COCO19_TO_SMPL24)
     assert r["pa_mpjpe"] < 1e-3          # 평행이동은 Procrustes 가 흡수
 
 
 def test_pose_metrics_returns_nan_when_no_overlap():
     from smpl_eval.metrics.pose import pose_metrics
-    pred, gt = _pair(H36M17_TO_SMPL24, n_frames=5)
+    pred, gt = _pair(COCO19_TO_SMPL24, n_frames=5)
     gt = {k: v.copy() for k, v in gt.items()}
     gt["frame_ids"] = gt["frame_ids"] + 1000
-    r = pose_metrics(pred, gt, H36M17_TO_SMPL24)
+    r = pose_metrics(pred, gt, COCO19_TO_SMPL24)
     assert r["n_matched"] == 0 and np.isnan(r["pa_mpjpe"])
