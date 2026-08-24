@@ -38,6 +38,14 @@ def limb_length_stats(tracks):
         j = tracks["joints3d"][sel][order]
         lens = np.stack([np.linalg.norm(j[:, a] - j[:, b], axis=-1)
                          for a, b in LIMBS], 1)                    # (F, L)
+        # GT 규약에 없는 뼈는 열 전체가 NaN 이다 (COCO 에는 척추가 없음).
+        # nanstd/nanmean 이 경고를 뿜지 않도록 그런 열을 미리 버린다.
+        usable = np.isfinite(lens).any(axis=0)
+        lens = lens[:, usable]
+        if lens.shape[1] == 0:
+            per_track[tid] = float("nan")
+            cvs.append(float("nan"))
+            continue
         with np.errstate(invalid="ignore", divide="ignore"):
             cv = np.nanstd(lens, 0) / np.nanmean(lens, 0)
         cv = cv[np.isfinite(cv)]

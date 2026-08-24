@@ -30,3 +30,5 @@ Captured-Motion-Dataset/
 smpl_eval/manifest.json
 smpl_eval/gate_out/
 smpl_eval/gate_out/
+smpl_eval/report_demo.html
+smpl_eval/report.html

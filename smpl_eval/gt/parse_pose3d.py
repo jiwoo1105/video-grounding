@@ -58,25 +58,25 @@ def detect_frame_offset(gt_frames, n_video_frames):
     return lo
 
 
-def to_gt_tracks(parsed, mapping, image_wh=None):
+def to_gt_tracks(parsed, mapping, image_wh=None, camera=None):
     """파싱 결과를 tracks.npz 호환 dict 로 변환. 미대응 SMPL 슬롯은 NaN.
 
     GT 에는 β·포즈 파라미터가 없으므로 해당 필드는 전부 NaN 이다.
     스키마를 공유해야 지표 코드가 예측/GT 를 구분 없이 다룰 수 있다.
+
+    camera: ColmapCamera. **반드시 넘겨야 한다.** GT 는 SfM 월드 좌표라
+      화면 좌표를 모르는데, 예측과 GT 를 짝짓는 것은 bbox IoU 이기 때문이다.
+      약원근 근사로 대신하면 z 가 0 을 지나며 발산해 bbox 가 수천만 픽셀까지
+      튄다(Data4 실측: 화면 안 0%). 그러면 ID·포즈 지표가 전부 무의미해진다.
+      camera 가 없으면 joints2d/bbox 는 NaN 으로 두고 3D 지표만 쓸 수 있다.
     """
     n = len(parsed["frame_ids"])
     j3 = np.full((n, 24, 3), np.nan, np.float32)
     for g, s in mapping.items():
         j3[:, s] = parsed["joints3d"][:, g]
 
-    # 약원근 투영으로 근사 2D 를 만들어 bbox 를 얻는다 (IoU 매칭 전용).
-    # 정밀한 투영이 아니라 "어느 트랙이 어느 트랙인가"를 짝짓기 위한 용도다.
-    if image_wh:
-        w, h = image_wh
-        fx = float(max(w, h))
-        z = np.where(np.abs(j3[..., 2]) < 1e-6, 1e-6, j3[..., 2])
-        j2 = np.stack([j3[..., 0] / z * fx + w / 2.0,
-                       j3[..., 1] / z * fx + h / 2.0], -1).astype(np.float32)
+    if camera is not None:
+        j2 = camera.project(j3).astype(np.float32)
     else:
         j2 = np.full((n, 24, 2), np.nan, np.float32)
 

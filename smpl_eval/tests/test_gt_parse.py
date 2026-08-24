@@ -96,11 +96,52 @@ def test_mapped_values_land_in_right_slots():
         np.testing.assert_array_equal(t["joints3d"][:, s], p["joints3d"][:, g])
 
 
-def test_bbox_is_inside_image_for_most_rows():
+def test_no_camera_yields_nan_2d_not_garbage():
+    """카메라 없이는 2D 를 만들지 않는다 — 근사 투영은 발산해서 위험하다."""
     p = parse_pose3d(D2, n_joints=17)
     t = to_gt_tracks(p, COCO17_TO_SMPL24, image_wh=(1920, 1080))
-    w = t["bbox"][:, 2] - t["bbox"][:, 0]
-    assert (w > 0).mean() > 0.9, "bbox 폭이 0 인 행이 너무 많음"
+    assert np.isnan(t["joints2d"]).all()
+
+
+def test_colmap_projection_puts_gt_on_screen():
+    """COLMAP 카메라로 투영하면 GT 가 실제 화면 안에 들어와야 한다.
+
+    예측-GT 매칭이 bbox IoU 이므로 이게 깨지면 ID·포즈 지표가 전부 무의미해진다.
+    """
+    import json
+    from smpl_eval.gt.colmap import load_camera
+
+    recs = json.load(open("smpl_eval/manifest.json"))
+    for ds in ("Data1", "Data2", "Data3", "Data4"):
+        rec = next(r for r in recs if r["dataset"] == ds)
+        n_j = 19 if ds == "Data1" else 17
+        mapping = COCO19_TO_SMPL24 if ds == "Data1" else COCO17_TO_SMPL24
+        cam = load_camera(rec["colmap_dir"], rec["cam"])
+        p = parse_pose3d(rec["gt_pose3d"], n_joints=n_j)
+        t = to_gt_tracks(p, mapping, (rec["width"], rec["height"]), cam)
+
+        uv = t["joints2d"]
+        ok = np.isfinite(uv).all(-1)
+        inside = (ok & (uv[..., 0] >= 0) & (uv[..., 0] < rec["width"])
+                  & (uv[..., 1] >= 0) & (uv[..., 1] < rec["height"]))
+        ratio = inside.sum() / max(ok.sum(), 1)
+        assert ratio > 0.9, f"{ds}: 화면 안 비율 {ratio:.1%}"
+
+        w = t["bbox"][:, 2] - t["bbox"][:, 0]
+        h = t["bbox"][:, 3] - t["bbox"][:, 1]
+        assert (w > 0).mean() > 0.9, f"{ds}: bbox 폭 0 인 행이 많음"
+        # 사람 하나가 화면 절반을 넘지는 않는다 (발산 감지)
+        assert np.median(h) < rec["height"], f"{ds}: bbox 높이 비정상"
+
+
+def test_camera_model_params_are_unpacked_by_name():
+    """SIMPLE_RADIAL 은 f,cx,cy,k 4개다 — fx,fy,cx,cy 로 읽으면 투영이 깨진다."""
+    from smpl_eval.gt.colmap import unpack_params
+    d = unpack_params("SIMPLE_RADIAL", [1912.0, 610.0, 512.0, 0.01])
+    assert d["fx"] == d["fy"] == 1912.0
+    assert d["cx"] == 610.0 and d["cy"] == 512.0 and d["k1"] == 0.01
+    f = unpack_params("FULL_OPENCV", [100., 200., 10., 20., 1, 2, 3, 4, 5, 6, 7, 8])
+    assert f["fx"] == 100.0 and f["fy"] == 200.0 and f["k3"] == 5.0
 
 
 def test_data1_to_gt_tracks_uses_coco19_with_feet():
