@@ -29,3 +29,4 @@ Captured-Motion-Dataset/
 .venv-smpl/
 smpl_eval/manifest.json
 smpl_eval/gate_out/
+smpl_eval/gate_out/
