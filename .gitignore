@@ -19,3 +19,8 @@ videos/*.mp4
 # 프레임 추출물
 sheet*.jpg
 /tmp/
+
+# SMPL 평가 파이프라인 산출물
+smpl_eval/outputs/
+smpl_eval/results/
+Captured-Motion-Dataset/
