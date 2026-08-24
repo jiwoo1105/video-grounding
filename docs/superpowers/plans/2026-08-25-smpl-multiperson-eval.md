@@ -30,10 +30,20 @@
 | Data3 | `3Dpose.txt` (소문자 p) | 70 | 17 | 2..1420 (영상 1420f) | 2 (`1,2`) | |
 | Data4 | `3DPose.txt` | 70 | 17 | 2..659 (영상 660f) | 3 (`1,2,3`) | **`nan` 값 존재** |
 
-**H36M-17 관절 순서** (BVH 계층에서 확정, Head를 index 10에 삽입):
-`0 Hip, 1 RHip, 2 RKnee, 3 RAnkle, 4 LHip, 5 LKnee, 6 LAnkle, 7 Spine, 8 Thorax, 9 Neck, 10 Head, 11 LShoulder, 12 LElbow, 13 LWrist, 14 RShoulder, 15 RElbow, 16 RWrist`
+> ⚠️ **정정 (2026-08-25, Task 8 실행 중 확정)**
+> 위 표의 "17 (H36M)" 은 **틀렸다.** BVH 계층을 근거로 한 추정이었으나
+> 실측 결과 `3DPose.txt` 는 **COCO 순서**를 쓴다. 자세한 근거는 스펙 §12.1.
 
-**Data1 19관절 규약은 미확정.** 2D 데이터의 신뢰도 패턴(앞 5개가 저신뢰 = 얼굴)으로 보아 **COCO-17 + 2 추가** 가설. Task 11의 재투영 검증으로 확정한다.
+**실제 관절 규약 (실측 확정)**
+
+- Data2/3/4 = **COCO-17**
+  `0 nose, 1 L_eye, 2 R_eye, 3 L_ear, 4 R_ear, 5 L_shoulder, 6 R_shoulder,
+   7 L_elbow, 8 R_elbow, 9 L_wrist, 10 R_wrist, 11 L_hip, 12 R_hip,
+   13 L_knee, 14 R_knee, 15 L_ankle, 16 R_ankle`
+- Data1 = **COCO-17 + [17 left_foot, 18 right_foot]** = 19관절
+
+**파급**: COCO 계열에는 골반이 없어 MPJPE 산출 불가 → PA-MPJPE 가 주 지표.
+GT 스케일이 데이터셋마다 달라(0.236~1.460) 정규화가 필수. 스펙 §12.2 참조.
 
 ---
 
