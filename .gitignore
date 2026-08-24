@@ -27,3 +27,5 @@ Captured-Motion-Dataset/
 
 # smpl_eval 로컬 venv
 .venv-smpl/
+smpl_eval/manifest.json
+smpl_eval/gate_out/
