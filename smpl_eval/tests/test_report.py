@@ -84,3 +84,17 @@ def test_html_has_no_horizontal_body_scroll():
         html = open(build_html(rows, os.path.join(d, "r.html")),
                     encoding="utf-8").read()
     assert "class='scroll'" in html and "overflow-x:auto" in html
+
+
+def test_overlay_font_prefers_korean_capable_face():
+    """오버레이 라벨에 한글이 들어가므로 한글 글리프가 있는 폰트를 우선해야 한다.
+
+    DejaVu 를 먼저 고르면 한글이 전부 두부(□)로 렌더링된다 (실측 발생).
+    """
+    from smpl_eval.overlay import _FONT_PATHS
+    first_dejavu = next((i for i, p in enumerate(_FONT_PATHS) if "DejaVu" in p),
+                        len(_FONT_PATHS))
+    first_korean = next((i for i, p in enumerate(_FONT_PATHS)
+                         if any(k in p for k in ("nanum", "Nanum", "Gothic"))),
+                        len(_FONT_PATHS))
+    assert first_korean < first_dejavu, "한글 폰트가 DejaVu 보다 뒤에 있음"

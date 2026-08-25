@@ -24,11 +24,20 @@ SMPL_LINKS = [
 LEFT_JOINTS = {1, 4, 7, 10, 13, 16, 18, 20, 22}
 
 # 라벨용 트루타입 폰트 후보. 없으면 PIL 기본(11px)으로 떨어진다.
+#
+# 한글이 들어가는 라벨이 있으므로 **한글 글리프를 가진 폰트를 먼저** 둔다.
+# DejaVu 에는 한글이 없어 전부 두부(□)로 렌더링된다 (실측 확인).
 _FONT_PATHS = [
+    "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumSquareRoundB.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumSquare_acB.ttf",
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+    # 한글이 없는 폴백
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
 ]
 _font_cache = {}
 
