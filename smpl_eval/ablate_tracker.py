@@ -21,6 +21,9 @@ import pickle
 import numpy as np
 import torch
 
+# 캐시 구조가 바뀌면 올린다. 옛 캐시를 읽다 죽는 사고를 막는다.
+CACHE_VERSION = 2
+
 
 def cache_detections(session, video_path, tmp_dir, cache_path, coco_w):
     """추론을 한 번만 돌려 추적·평가에 필요한 것만 저장한다.
@@ -52,7 +55,8 @@ def cache_detections(session, video_path, tmp_dir, cache_path, coco_w):
             "K": fp.K.detach().cpu().float().numpy(),
         })
     with open(cache_path, "wb") as f:
-        pickle.dump({"img_size": int(session.img_size), "frames": frames}, f)
+        pickle.dump({"version": CACHE_VERSION,
+                     "img_size": int(session.img_size), "frames": frames}, f)
     return frames
 
 
@@ -111,15 +115,26 @@ def main(argv=None):
     from smpl_eval.runners.multihmr2 import COCO_LABEL_TO_SMPL
     pairs = [(labels.index(k), v) for k, v in COCO_LABEL_TO_SMPL.items() if k in labels]
 
+    blob = None
     if os.path.exists(a.cache):
-        print("캐시 사용: %s" % a.cache)
-        blob = pickle.load(open(a.cache, "rb"))
-    else:
+        try:
+            cand = pickle.load(open(a.cache, "rb"))
+            if isinstance(cand, dict) and cand.get("version") == CACHE_VERSION:
+                blob = cand
+                print("캐시 사용: %s" % a.cache)
+            else:
+                print("캐시 형식이 낡음 — 삭제하고 다시 추론합니다")
+                os.remove(a.cache)
+        except Exception as e:
+            print("캐시 읽기 실패(%s) — 다시 추론합니다" % type(e).__name__)
+            os.remove(a.cache)
+    if blob is None:
         from multihmr2 import api
         print("추론 1회 실행 중 (이후 설정 변경은 GPU 불필요)...")
         s = api.init_hmr_session(os.path.join(a.repo, "checkpoints", "multihmr2.pt"))
         cache_detections(s, rec["video_path"], a.tmp, a.cache, w)
         blob = pickle.load(open(a.cache, "rb"))
+
     frames, img_size = blob["frames"], blob["img_size"]
     n_det = sum(len(f["conf"]) for f in frames if f)
     print("프레임 %d, 검출 %d개, img_size %d\n" % (len(frames), n_det, img_size))
