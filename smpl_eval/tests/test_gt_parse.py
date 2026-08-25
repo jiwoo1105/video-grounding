@@ -10,12 +10,24 @@ from smpl_eval.schema import validate_tracks
 ROOT = "Captured-Motion-Dataset"
 pytestmark = pytest.mark.skipif(not os.path.isdir(ROOT), reason="데이터셋 없음")
 
-D2 = f"{ROOT}/Data2_WTA_tennis_double_clip3_1min_2K_30fps/tennis_double_clip3_1min_2K_pose_result/3DPose.txt"
-D3 = f"{ROOT}/Data3_OnlyOneOf_rie_junji_2K_60fps/rie_junji_4cam_pose_result/3Dpose.txt"
-D4 = f"{ROOT}/Data4_vid3_golden_clip1_2K_60fps/3_golden_clip1_pose_result/3DPose.txt"
-_D1 = f"{ROOT}/Data1_SKNight-live_Basketball/S03_HL01_2K_pose_gt"
-D1_3D = glob.glob(f"{_D1}/PoseResults3d_*.txt")[0]
-D1_2D = glob.glob(f"{_D1}/PoseResults2d_*.txt")[0]
+def _gt_path(dataset, key="gt_pose3d"):
+    """GT 경로는 하드코딩하지 않고 스캐너가 찾은 실제 경로를 쓴다.
+
+    파일명 대소문자가 OS 마다 다르게 보일 수 있어(3Dpose.txt vs 3DPose.txt)
+    하드코딩하면 macOS 에서는 통과하고 Linux 에서는 깨진다.
+    """
+    from smpl_eval.dataset_index import scan
+    for r in scan(ROOT):
+        if r["dataset"] == dataset and r.get(key):
+            return r[key]
+    pytest.skip(f"{dataset} {key} 없음")
+
+
+D2 = _gt_path("Data2")
+D3 = _gt_path("Data3")
+D4 = _gt_path("Data4")
+D1_3D = _gt_path("Data1")
+D1_2D = _gt_path("Data1", "gt_pose2d")
 
 
 # ── 3D 파서 ─────────────────────────────────────────────────────────

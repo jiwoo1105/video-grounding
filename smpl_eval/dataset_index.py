@@ -37,8 +37,38 @@ def _probe(path):
 
 
 def _first(pattern):
+    """패턴에 맞는 첫 파일의 **실제 디스크 경로**를 돌려준다.
+
+    glob.glob 은 와일드카드가 없는 패턴이면 존재 여부만 확인하고 패턴
+    문자열을 그대로 반환한다. macOS 는 파일시스템이 대소문자를 구분하지
+    않으므로 "3DPose.txt" 로 조회해도 실제 파일이 "3Dpose.txt" 인데
+    존재한다고 나오고, 그 잘못된 이름이 manifest 에 박힌다. 그 manifest 를
+    Linux 로 옮기면 파일을 찾지 못한다 (2026-08-25 실제로 발생).
+
+    그래서 디렉터리를 직접 훑어 대소문자 무시로 맞춰보고 실제 이름을 쓴다.
+    """
     hits = sorted(glob.glob(pattern))
-    return hits[0] if hits else None
+    if hits and os.path.basename(hits[0]) in _listdir(os.path.dirname(hits[0])):
+        return hits[0]
+
+    d, name = os.path.split(pattern)
+    entries = _listdir(d)
+    if not entries:
+        return None
+    if any(ch in name for ch in "*?["):
+        import fnmatch
+        lower = name.lower()
+        cands = [e for e in entries if fnmatch.fnmatch(e.lower(), lower)]
+    else:
+        cands = [e for e in entries if e.lower() == name.lower()]
+    return os.path.join(d, sorted(cands)[0]) if cands else None
+
+
+def _listdir(d):
+    try:
+        return os.listdir(d)
+    except OSError:
+        return []
 
 
 def _gt_person_count(path):
