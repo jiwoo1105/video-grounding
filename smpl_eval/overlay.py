@@ -23,6 +23,35 @@ SMPL_LINKS = [
 ]
 LEFT_JOINTS = {1, 4, 7, 10, 13, 16, 18, 20, 22}
 
+# 라벨용 트루타입 폰트 후보. 없으면 PIL 기본(11px)으로 떨어진다.
+_FONT_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+]
+_font_cache = {}
+
+
+def _font(size):
+    """크기별 폰트를 캐시해 돌려준다. 프레임마다 로드하면 느리다."""
+    if size in _font_cache:
+        return _font_cache[size]
+    from PIL import ImageFont
+    f = None
+    for path in _FONT_PATHS:
+        if os.path.isfile(path):
+            try:
+                f = ImageFont.truetype(path, size)
+                break
+            except OSError:
+                continue
+    if f is None:
+        f = ImageFont.load_default()
+    _font_cache[size] = f
+    return f
+
+
 # 트랙 ID 별 색 (구분이 목적이라 채도 높은 색으로)
 PALETTE = [(255, 82, 82), (68, 189, 50), (0, 168, 255), (251, 197, 49),
            (156, 136, 255), (255, 121, 198), (0, 210, 211), (255, 159, 67)]
@@ -91,12 +120,20 @@ def render_video(video_path, tracks_path, out_path, fps=None, max_frames=None,
             img = Image.frombytes("RGB", (W, H), buf)
             rows = by_frame.get(f, [])
             if rows:
-                _draw_rows(ImageDraw.Draw(img), tracks, rows)
+                # 최종 출력에서 읽히도록 축소배율을 미리 보정한다
+                fs = max(14, int(round(H / 42 / max(scale, 0.2))))
+                _draw_rows(ImageDraw.Draw(img), tracks, rows, font_size=fs)
                 n_drawn += 1
             d2 = ImageDraw.Draw(img)
-            cap = f"{label or meta.get('model','')}   frame {f}   tracks {len(rows)}"
-            d2.rectangle([0, 0, 10 + 7 * len(cap), 22], fill=(0, 0, 0))
-            d2.text((6, 6), cap, fill=(255, 255, 255))
+            cap = f"{label or meta.get('model','')}  |  frame {f}  |  tracks {len(rows)}"
+            cf = _font(max(16, int(round(H / 34 / max(scale, 0.2)))))
+            try:
+                cx0, cy0, cx1, cy1 = d2.textbbox((0, 0), cap, font=cf)
+                cw, ch = cx1 - cx0, cy1 - cy0
+            except AttributeError:
+                cw, ch = d2.textsize(cap, font=cf)
+            d2.rectangle([0, 0, cw + 20, ch + 16], fill=(0, 0, 0))
+            d2.text((10, 8), cap, fill=(255, 255, 255), font=cf)
             if scale != 1.0:
                 img = img.resize((ow, oh), Image.BILINEAR)
             enc.stdin.write(img.tobytes())
@@ -108,8 +145,33 @@ def render_video(video_path, tracks_path, out_path, fps=None, max_frames=None,
     return out_path, n_drawn
 
 
-def _draw_rows(d, tracks, rows):
+def _luma(c):
+    return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+
+
+def _draw_id_chip(d, x, y, tid, col, font):
+    """bbox 위에 트랙 ID 를 대비 높은 칩으로 올린다.
+
+    박스 안에 같은 색으로 쓰면 영상 배경에 묻혀 읽히지 않는다(실측).
+    트랙 색을 배경으로 채우고 글자는 명도에 따라 흑/백을 고른다.
+    """
+    text = str(tid)
+    try:
+        x0, y0, x1, y1 = d.textbbox((0, 0), text, font=font)
+        tw, th = x1 - x0, y1 - y0
+    except AttributeError:
+        tw, th = d.textsize(text, font=font)
+    pad = max(3, th // 4)
+    cx0, cy0 = x, max(0, y - th - 2 * pad - 2)
+    d.rectangle([cx0, cy0, cx0 + tw + 2 * pad, cy0 + th + 2 * pad],
+                fill=col, outline=(0, 0, 0), width=2)
+    fg = (0, 0, 0) if _luma(col) > 140 else (255, 255, 255)
+    d.text((cx0 + pad, cy0 + pad), text, fill=fg, font=font)
+
+
+def _draw_rows(d, tracks, rows, font_size=26):
     """한 프레임의 여러 트랙을 그린다 (draw_frame 과 공유)."""
+    font = _font(font_size)
     for row in rows:
         tid = int(tracks["track_ids"][row])
         col = PALETTE[tid % len(PALETTE)]
@@ -119,7 +181,6 @@ def _draw_rows(d, tracks, rows):
         b = tracks["bbox"][row]
         if b[2] > b[0]:
             d.rectangle([float(v) for v in b], outline=col, width=3)
-            d.text((float(b[0]) + 4, float(b[1]) + 4), f"id {tid}", fill=col)
 
         for a, c in SMPL_LINKS:
             if ok[a] and ok[c]:
@@ -130,6 +191,10 @@ def _draw_rows(d, tracks, rows):
                 r = 4 if k in LEFT_JOINTS else 3
                 d.ellipse([x - r, y - r, x + r, y + r],
                           fill=(255, 255, 255), outline=col)
+
+        # 라벨은 골격 위에 그려야 가려지지 않는다
+        if b[2] > b[0]:
+            _draw_id_chip(d, float(b[0]), float(b[1]), tid, col, font)
 
 
 def render(video_path, tracks_path, out_dir, frames):
