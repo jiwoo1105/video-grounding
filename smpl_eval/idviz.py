@@ -4,10 +4,14 @@
 가리키는 사람만 바뀌는 실패(정체 혼동)를 눈으로 잡을 수 없다.
 
 이 도구는 **GT 사람을 기준으로** 그린다.
-  - 박스 색과 번호는 GT 사람 고유 (프레임 내내 불변)
-  - 그 사람에게 현재 배정된 **예측 트랙 ID** 를 함께 표시
+  - **박스**: GT 사람 고유 색·번호 P. 프레임 내내 불변 (정답이므로 성능과 무관)
+  - **골격**: 그 사람에게 현재 배정된 **예측 트랙 T 의 색**.
+             같은 사람 위에서 골격 색이 바뀌면 그것이 ID 변경이다.
   - 예측 ID 가 직전 프레임과 달라지면 화면에 경고를 띄운다
   - 하단 띠에 사람별 배정 이력을 색으로 깔아, 색이 끊기는 곳이 ID 변경
+
+박스와 골격의 색 기준이 다른 것이 핵심이다 — 박스는 정답, 골격은 모델.
+둘이 같은 기준이면 화면만 보고는 아무 문제 없어 보인다.
 
 두 모델을 같은 방식으로 그리면 '어느 쪽이 더 자주 바뀌는가' 가 색 띠의
 조각 수로 바로 보인다.
@@ -117,11 +121,12 @@ def render(video_path, tracks_path, rec, out_path, label, scale=0.6, max_frames=
             for row in gt_rows.get(f, []):
                 g = int(gt["track_ids"][row])
                 p = assign.get(g, {}).get(f)
-                col = PALETTE[g % len(PALETTE)]
+                col = PALETTE[g % len(PALETTE)]          # 박스 = 정답 사람 색
+                tcol = (110, 116, 128) if p is None else PALETTE[p % len(PALETTE)]
                 b = gt["bbox"][row]
                 if b[2] > b[0]:
                     d.rectangle([float(v) for v in b], outline=col, width=3)
-                # 예측 트랙 골격을 같은 색으로
+                # 골격은 **배정된 예측 트랙 색** — 색이 바뀌면 ID 변경
                 if p is not None:
                     sel = np.where((tracks["frame_ids"] == f)
                                    & (tracks["track_ids"] == p))[0]
@@ -130,13 +135,13 @@ def render(video_path, tracks_path, rec, out_path, label, scale=0.6, max_frames=
                         ok = np.isfinite(j).all(-1)
                         for a, c in SMPL_LINKS:
                             if ok[a] and ok[c]:
-                                d.line([tuple(j[a]), tuple(j[c])], fill=col, width=3)
+                                d.line([tuple(j[a]), tuple(j[c])], fill=tcol, width=4)
                         for k in range(len(j)):
                             if ok[k]:
                                 x, y = float(j[k][0]), float(j[k][1])
                                 r = 4 if k in LEFT_JOINTS else 3
                                 d.ellipse([x - r, y - r, x + r, y + r],
-                                          fill=(255, 255, 255), outline=col)
+                                          fill=(255, 255, 255), outline=tcol)
                 txt = "P%d <- %s" % (g, "?" if p is None else "T%d" % p)
                 d.rectangle([b[0], b[1] - fs - 10, b[0] + len(txt) * fs * .62 + 10, b[1] - 2],
                             fill=col)
@@ -153,7 +158,8 @@ def render(video_path, tracks_path, rec, out_path, label, scale=0.6, max_frames=
                 d.text((12, H - fs * 2.2), warn, fill=(255, 255, 255), font=font)
 
             draw_strip(d, assign, frames, gt_ids, 0, H, W, STRIP_H, f, small)
-            cap = "%s  |  frame %d  |  누적 ID 변경 %d" % (label, f, n_changes)
+            cap = ("%s  |  frame %d  |  누적 ID 변경 %d   "
+                   "[박스=정답사람 P, 골격=모델트랙 T]") % (label, f, n_changes)
             d.rectangle([0, 0, len(cap) * fs * .62 + 20, fs + 14], fill=(0, 0, 0))
             d.text((10, 7), cap, fill=(255, 255, 255), font=font)
 
