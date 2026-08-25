@@ -268,9 +268,16 @@ def _smpl_faces():
     """SMPL 면 인덱스 (13,776 x 3). 모델 pkl 에서 읽는다."""
     import pickle
     cands = [os.path.expanduser(p) for p in (
+        "~/smpl_eval_env/ml-comotion/src/comotion_demo/data/smpl/SMPL_NEUTRAL.pkl",
         "~/video-grounding/smpl/SMPL_NEUTRAL.pkl",
-        "~/smpl_eval_env/ml-comotion/data/smpl/SMPL_NEUTRAL.pkl",
         "./smpl/SMPL_NEUTRAL.pkl")]
+    # CoMotion 패키지 안에 동봉된 것을 우선 쓴다 — 추론에 쓰인 바로 그 파일이다.
+    try:
+        import comotion_demo
+        cands.insert(0, os.path.join(os.path.dirname(comotion_demo.__file__),
+                                     "data", "smpl", "SMPL_NEUTRAL.pkl"))
+    except ImportError:
+        pass
     for p in cands:
         if os.path.exists(p):
             with open(p, "rb") as fh:
