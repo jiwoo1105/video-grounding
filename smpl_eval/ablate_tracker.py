@@ -22,35 +22,49 @@ import numpy as np
 import torch
 
 
-def cache_detections(session, video_path, tmp_dir, cache_path):
-    """추론을 한 번만 돌려 추적에 필요한 것만 저장한다."""
+def cache_detections(session, video_path, tmp_dir, cache_path, coco_w):
+    """추론을 한 번만 돌려 추적·평가에 필요한 것만 저장한다.
+
+    v3d(19,158 정점)를 그대로 담으면 캐시가 2GB 를 넘는다. 여기서
+    COCO 키포인트로 미리 회귀해 담는다.
+    """
     from multihmr2 import api
 
     os.makedirs(tmp_dir, exist_ok=True)
     preds = api.infer_video(session, os.path.abspath(video_path), tmp_dir)
     frames = []
-    for t, fp in enumerate(preds):
+    for _t, fp in enumerate(preds):
         p = fp.persons
         n = int(getattr(p, "num_person", 0) or 0)
         if n == 0:
             frames.append(None)
             continue
+        v3d = p.v3d.detach().cpu().float()
         frames.append({
             "trackfeat": p.trackfeat.detach().cpu().float().numpy(),
             "transl_pelvis": p.transl_pelvis.detach().cpu().float().numpy(),
-            "j2d": p.j2d.detach().cpu().float().numpy(),
-            "v3d": p.v3d.detach().cpu().float().numpy(),
+            # 추적기가 쓰는 값 — api.infer_video 와 동일하게 구성한다
+            "j2d_root": p.j2d.detach().cpu().float()[:, 0].numpy(),
+            "pelvis_ori": p.bone_poses.detach().cpu().float()[:, 0, :3, :3].numpy(),
+            # 평가용
+            "coco3d": torch.einsum("kv,nvc->nkc", coco_w, v3d).numpy(),
             "conf": p.conf.detach().cpu().float().numpy(),
-            "shape": p.shape.detach().cpu().float().numpy(),
             "K": fp.K.detach().cpu().float().numpy(),
         })
     with open(cache_path, "wb") as f:
-        pickle.dump(frames, f)
+        pickle.dump({"img_size": int(session.img_size), "frames": frames}, f)
     return frames
 
 
-def retrack(frames, combine, min_sim=0.69, feat_aggsim="Knn35t15.0"):
-    """캐시된 검출에 추적기만 다시 돌린다. GPU 불필요."""
+def retrack(frames, img_size, combine, min_sim=0.69, feat_aggsim="Knn35t15.0"):
+    """캐시된 검출에 추적기만 다시 돌린다. GPU 불필요.
+
+    입력 구성은 api.infer_video 와 **정확히 동일해야** 한다 —
+      pelvis_ijn = cat([ j2d[:,0] / img_size,  log(1 / z) ])
+      pelvis_ori = bone_poses[:, 0, :3, :3]
+    이를 어기면(예: 정규화 생략, 방향을 단위행렬로) 기본 설정조차
+    원래 결과를 재현하지 못해 ablation 전체가 무효가 된다.
+    """
     from multihmr2.tracker import FeatPelvisTracker
 
     tr = FeatPelvisTracker(combine=combine, min_sim=min_sim,
@@ -64,10 +78,9 @@ def retrack(frames, combine, min_sim=0.69, feat_aggsim="Knn35t15.0"):
             continue
         feat = torch.from_numpy(fr["trackfeat"])
         xyz = torch.from_numpy(fr["transl_pelvis"])
-        # api.infer_video 와 동일하게 픽셀+근접도, 방향을 구성
-        ijn = torch.cat([torch.from_numpy(fr["j2d"])[:, 0, :],
-                         1.0 / xyz[:, 2:3].clamp(min=1e-3)], -1)
-        ori = torch.eye(3).repeat(len(xyz), 1, 1)
+        ijn = torch.cat([torch.from_numpy(fr["j2d_root"]) / img_size,
+                         torch.log(1.0 / xyz[:, 2:3].clamp_min(1e-5))], -1).float()
+        ori = torch.from_numpy(fr["pelvis_ori"]).float()
         ids = tr.track_next_frame(t, feat, xyz, ijn, ori)
         out.append(np.asarray(ids).astype(np.int32))
     return out
@@ -85,26 +98,6 @@ def main(argv=None):
 
     rec = next(r for r in json.load(open(a.manifest)) if r["dataset"] == a.dataset)
 
-    if os.path.exists(a.cache):
-        print("캐시 사용: %s" % a.cache)
-        frames = pickle.load(open(a.cache, "rb"))
-    else:
-        from multihmr2 import api
-        print("추론 1회 실행 중 (이후 설정 변경은 GPU 불필요)...")
-        s = api.init_hmr_session(os.path.join(a.repo, "checkpoints", "multihmr2.pt"))
-        frames = cache_detections(s, rec["video_path"], a.tmp, a.cache)
-    n_det = sum(len(f["conf"]) for f in frames if f)
-    print("프레임 %d, 검출 %d개\n" % (len(frames), n_det))
-
-    from smpl_eval.evaluate import load_gt
-    from smpl_eval.conventions import DATASET_CONVENTION, common_indices
-    from smpl_eval.runners.base import bbox_from_joints2d
-    from smpl_eval.metrics.identity import gt_track_purity
-
-    gt, _ = load_gt(rec)
-    _, mapping = DATASET_CONVENTION[a.dataset]
-    W, H = rec["width"], rec["height"]
-
     import anny, warnings
     from anny import KeypointsRegressor
     with warnings.catch_warnings():
@@ -118,15 +111,37 @@ def main(argv=None):
     from smpl_eval.runners.multihmr2 import COCO_LABEL_TO_SMPL
     pairs = [(labels.index(k), v) for k, v in COCO_LABEL_TO_SMPL.items() if k in labels]
 
-    print("%-18s %9s %9s %9s %9s" % ("combine (외모:위치)", "purity", "최저", "트랙수", "검출행"))
-    print("-" * 60)
+    if os.path.exists(a.cache):
+        print("캐시 사용: %s" % a.cache)
+        blob = pickle.load(open(a.cache, "rb"))
+    else:
+        from multihmr2 import api
+        print("추론 1회 실행 중 (이후 설정 변경은 GPU 불필요)...")
+        s = api.init_hmr_session(os.path.join(a.repo, "checkpoints", "multihmr2.pt"))
+        cache_detections(s, rec["video_path"], a.tmp, a.cache, w)
+        blob = pickle.load(open(a.cache, "rb"))
+    frames, img_size = blob["frames"], blob["img_size"]
+    n_det = sum(len(f["conf"]) for f in frames if f)
+    print("프레임 %d, 검출 %d개, img_size %d\n" % (len(frames), n_det, img_size))
+
+    from smpl_eval.evaluate import load_gt
+    from smpl_eval.conventions import DATASET_CONVENTION
+    from smpl_eval.runners.base import bbox_from_joints2d
+    from smpl_eval.metrics.identity import gt_track_purity
+
+    gt, _ = load_gt(rec)
+    _, mapping = DATASET_CONVENTION[a.dataset]
+    W, H = rec["width"], rec["height"]
+
+    print("%-20s %9s %9s %9s %9s" % ("combine (외모:위치)", "purity", "최저", "트랙수", "검출행"))
+    print("-" * 62)
     for combine in a.combines.split(","):
-        ids_per_frame = retrack(frames, combine)
+        ids_per_frame = retrack(frames, img_size, combine)
         rows = []
         for t, fr in enumerate(frames):
             if fr is None:
                 continue
-            kp3 = torch.einsum("kv,nvc->nkc", w, torch.from_numpy(fr["v3d"])).numpy()
+            kp3 = fr["coco3d"]
             K = fr["K"]
             sc = W / (2.0 * float(K[0, 2])) if K[0, 2] > 0 else 1.0
             fx, fy = float(K[0, 0]) * sc, float(K[1, 1]) * sc
@@ -139,7 +154,7 @@ def main(argv=None):
                 j2 = np.stack([j3[:, 0] / z * fx + cx, j3[:, 1] / z * fy + cy], -1)
                 rows.append((t, int(ids_per_frame[t][i]), j2.astype(np.float32)))
         if not rows:
-            print("%-18s  (검출 없음)" % combine)
+            print("%-20s  (검출 없음)" % combine)
             continue
         j2d = np.stack([r[2] for r in rows])
         tracks = {"frame_ids": np.array([r[0] for r in rows], np.int32),
@@ -148,7 +163,7 @@ def main(argv=None):
         pu = gt_track_purity(tracks, gt)
         wf, wp = combine.split("_")[1:]
         tot = float(wf) + float(wp)
-        print("%-18s %9.3f %9.3f %9d %9d"
+        print("%-20s %9.3f %9.3f %9d %9d"
               % ("%s (%.0f%%:%.0f%%)" % (combine.replace("wsum_", ""),
                                           100 * float(wf) / tot, 100 * float(wp) / tot),
                  pu["mean_purity"], pu["min_purity"],
