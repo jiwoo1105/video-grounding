@@ -42,8 +42,17 @@ V="$VENV_ROOT/comotion"
 [ -d "$V" ] || python3 -m venv "$V"
 "$V/bin/pip" install -q --upgrade pip wheel
 "$V/bin/pip" install -q torch torchvision --index-url "$TORCH_INDEX"
+
+# chumpy 는 setup.py 에서 pip 를 임포트하는데 빌드 격리 환경에는 pip 가
+# 없어 실패한다 (실측 확인). 격리를 끄면 venv 의 pip 가 보여 설치된다.
+# 먼저 넣어두면 아래 -e 설치가 이미 충족된 것으로 보고 넘어간다.
+"$V/bin/pip" install -q --no-build-isolation \
+  "chumpy @ git+https://github.com/mattloper/chumpy@9b045ff5d6588a24a0bab52c83f032e2ba433e17"
+
 cd ml-comotion
-"$V/bin/pip" install -e '.[all]'
+# '.[all]' 은 aitviewer(3D 뷰어)를 끌어온다. 헤드리스 MIG 환경에서는
+# 불필요하고 OpenGL 의존성만 늘어나므로 기본 의존성만 설치한다.
+"$V/bin/pip" install -q -e .
 if [ ! -f src/comotion_demo/data/comotion_detection_checkpoint.pt ]; then
   bash get_pretrained_models.sh
 fi
@@ -59,9 +68,9 @@ V2="$VENV_ROOT/multihmr2"
 "$V2/bin/pip" install -q --upgrade pip wheel
 "$V2/bin/pip" install -q torch torchvision --index-url "$TORCH_INDEX"
 cd multi-hmr2
-# MIG 는 OpenGL 을 지원하지 않으므로 렌더 의존성은 넣지 않는다.
+# MIG 는 OpenGL 을 지원하지 않으므로 '[render]' 는 넣지 않는다.
 # 시각 검증은 저장소의 PIL 기반 오버레이 도구로 한다.
-"$V2/bin/pip" install -e .
+"$V2/bin/pip" install -q -e .
 
 # ── 4. SMPL 바디모델 ─────────────────────────────────────────────
 echo
