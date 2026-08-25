@@ -61,3 +61,27 @@ def test_all_plausibility_returns_all_keys():
     r = all_plausibility(make_tracks(n_frames=30, n_tracks=2), 30.0)
     for k in ("limb_max_cv", "mean_accel", "violation_rate", "beta_max_std"):
         assert k in r, k
+
+
+def test_jitter_separates_depth_from_screen_plane():
+    """깊이(z) 노이즈가 화면평면(xy) 지표를 오염시키면 안 된다.
+
+    단안 추정은 깊이가 본질적으로 불안정해서, 3D 전체로 지터를 재면
+    모델 비교가 깊이 추정 품질 비교로 변질된다 (CoMotion 실측: 98%가 z).
+    """
+    t = make_tracks(n_frames=40, n_tracks=2, seed=31)
+    rng = np.random.default_rng(0)
+    t["joints3d"] = t["joints3d"].copy()
+    t["joints3d"][..., 2] += rng.normal(0, 0.3, t["joints3d"].shape[:2]).astype(np.float32)
+
+    r = acceleration_jitter(t, 30.0)
+    assert r["mean_accel_z"] > r["mean_accel_xy"] * 10, r
+    assert r["depth_share"] > 0.9
+
+
+def test_beta_constant_per_track_is_flagged():
+    """β 가 트랙 내내 상수면 β 기반 ID 스왑 탐지가 무력함을 알려야 한다."""
+    t = make_tracks(n_frames=30, n_tracks=3)
+    assert beta_consistency(t)["constant_per_track"] is True
+    t2 = make_tracks(n_frames=30, n_tracks=3, beta_jump_at=(15, 1))
+    assert beta_consistency(t2)["constant_per_track"] is False
