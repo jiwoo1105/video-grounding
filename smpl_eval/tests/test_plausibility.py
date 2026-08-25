@@ -85,3 +85,23 @@ def test_beta_constant_per_track_is_flagged():
     assert beta_consistency(t)["constant_per_track"] is True
     t2 = make_tracks(n_frames=30, n_tracks=3, beta_jump_at=(15, 1))
     assert beta_consistency(t2)["constant_per_track"] is False
+
+
+def test_all_plausibility_propagates_every_subkey():
+    """all_plausibility 가 하위 지표의 키를 빠짐없이 옮기는지 확인한다.
+
+    개별 함수만 테스트하면 병합 단계의 누락을 놓친다 (실제로
+    beta_constant_per_track 이 여기서 빠져 실행 중 KeyError 가 났다).
+    """
+    t = make_tracks(n_frames=30, n_tracks=2)
+    r = all_plausibility(t, 30.0)
+    expected = {
+        "limb_mean_cv", "limb_max_cv",
+        "mean_accel", "p95_accel", "mean_accel_xy", "p95_accel_xy",
+        "mean_accel_z", "depth_share",
+        "n_violations", "violation_rate",
+        "beta_available", "beta_constant_per_track",
+        "beta_mean_std", "beta_max_std", "beta_jump_frames",
+    }
+    missing = expected - set(r)
+    assert not missing, f"병합에서 누락된 키: {sorted(missing)}"

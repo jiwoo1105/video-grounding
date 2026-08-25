@@ -165,6 +165,8 @@ def all_plausibility(tracks, fps):
         "mean_accel_xy": aj["mean_accel_xy"], "p95_accel_xy": aj["p95_accel_xy"],
         "mean_accel_z": aj["mean_accel_z"], "depth_share": aj["depth_share"],
         "n_violations": ja["n_violations"], "violation_rate": ja["violation_rate"],
-        "beta_available": bc["available"], "beta_mean_std": bc["mean_std"],
+        "beta_available": bc["available"],
+        "beta_constant_per_track": bc["constant_per_track"],
+        "beta_mean_std": bc["mean_std"],
         "beta_max_std": bc["max_std"], "beta_jump_frames": bc["jump_frames"],
     }
