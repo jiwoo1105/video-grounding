@@ -32,3 +32,8 @@ smpl_eval/gate_out/
 smpl_eval/gate_out/
 smpl_eval/report_demo.html
 smpl_eval/report.html
+
+# 개인키 — 절대 커밋 금지
+*.pem
+*.key
+id_rsa*
