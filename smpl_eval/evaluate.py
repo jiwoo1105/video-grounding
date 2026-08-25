@@ -13,7 +13,8 @@ from smpl_eval.schema import load_tracks
 from smpl_eval.conventions import DATASET_CONVENTION
 from smpl_eval.gt.parse_pose3d import parse_pose3d, to_gt_tracks, detect_frame_offset
 from smpl_eval.metrics.plausibility import all_plausibility
-from smpl_eval.metrics.identity import id_metrics, person_count_error
+from smpl_eval.metrics.identity import (
+    id_metrics, person_count_error, gt_track_purity)
 from smpl_eval.metrics.occlusion import find_occlusion_events, id_retention_around_events
 from smpl_eval.metrics.pose import pose_metrics
 from smpl_eval.metrics.handsize import hand_pixel_stats
@@ -98,6 +99,11 @@ def evaluate_one(tracks_path, rec):
     try:
         out.update(pose_metrics(pred, gt, mapping))
         out.update({f"id_{k}": v for k, v in id_metrics(pred, gt).items()})
+        pur = gt_track_purity(pred, gt)
+        out.update({"gt_purity_mean": pur["mean_purity"],
+                    "gt_purity_min": pur["min_purity"],
+                    "gt_coverage_mean": pur["mean_coverage"],
+                    "gt_n_tracks": pur["n_gt_tracks"]})
         out.update({f"occ_{k}": v for k, v in
                     id_retention_around_events(pred, gt, events).items()})
     except Exception as e:                       # GT 비교만 실패해도 나머지는 남긴다
