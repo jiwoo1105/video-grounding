@@ -106,3 +106,33 @@ def test_id_swap_in_prediction_is_caught_end_to_end():
         res = evaluate_one(p, rec)
     assert res["id_idf1"] < 0.9, res["id_idf1"]
     assert res["id_num_switches"] >= 2
+
+
+def test_gt_and_prediction_bbox_use_same_construction():
+    """예측과 GT 의 bbox 생성 방식이 같아야 IoU 매칭이 공정하다.
+
+    CoMotion 이 모델의 MOT bbox(여백 포함)를 쓰고 GT 는 관절에서 유도할 때
+    IoU 가 0.41~0.48 로 임계값 0.5 아래에 걸려 ID 지표가 통째로 무너졌다.
+    추적 품질이 아니라 bbox 관례 차이로 점수가 갈리면 안 된다.
+    """
+    from smpl_eval.runners.base import bbox_from_joints2d
+
+    rec = _rec("Data3")
+    gt, _ = load_gt(rec)
+    derived = bbox_from_joints2d(gt["joints2d"])
+    np.testing.assert_allclose(gt["bbox"], derived, rtol=1e-5, atol=1e-3)
+
+
+@pytest.mark.parametrize("dataset", ["Data1", "Data2", "Data3", "Data4"])
+def test_gt_self_match_iou_is_high(dataset):
+    """GT 를 예측으로 넣으면 IoU 가 1.0 이어야 한다 (매칭 경로 정상성)."""
+    from smpl_eval.metrics.geometry import iou_matrix
+
+    rec = _rec(dataset)
+    gt, _ = load_gt(rec)
+    f = int(np.median(np.unique(gt["frame_ids"])))
+    sel = gt["frame_ids"] == f
+    if sel.sum() == 0:
+        pytest.skip("프레임 없음")
+    m = iou_matrix(gt["bbox"][sel], gt["bbox"][sel])
+    assert np.allclose(np.diag(m), 1.0, atol=1e-6)

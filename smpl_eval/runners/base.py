@@ -81,7 +81,14 @@ def project_default_K(j3d, width, height):
 
 
 def bbox_from_joints2d(j2d):
-    """관절 2D 로부터 축정렬 bbox (x1,y1,x2,y2)."""
+    """관절 2D 로부터 축정렬 bbox (x1,y1,x2,y2).
+
+    ★ 모든 러너와 GT 가 **반드시 이 방식으로** bbox 를 만들어야 한다.
+    예측-GT 매칭이 bbox IoU 이므로, 한쪽만 모델의 원본 검출 박스(보통
+    여백이 있음)를 쓰면 IoU 가 체계적으로 낮아져 추적 품질과 무관하게
+    점수가 갈린다. (실측: CoMotion 의 MOT bbox 는 GT 대비 각 변 1.5배,
+    IoU 0.41~0.48 로 임계값 0.5 아래 → ID 지표 전체가 무의미해졌다)
+    """
     ok = np.isfinite(j2d).all(-1)
     out = np.zeros((len(j2d), 4), np.float32)
     for i in range(len(j2d)):

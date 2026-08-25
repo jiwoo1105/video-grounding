@@ -61,20 +61,25 @@ class CoMotionRunner(Runner):
         joints3d = self._forward_smpl(betas, pose, trans)
         joints2d = project_default_K(joints3d, video_meta["width"], video_meta["height"])
 
-        # bbox·신뢰도는 모델이 낸 MOT 출력을 그대로 쓴다 (관절에서 유도하지 않음)
+        # ★ bbox 는 **관절에서 유도한다**. 모델이 낸 MOT bbox 를 쓰면 안 된다.
+        #
+        # CoMotion 의 MOT bbox 는 여백을 준 검출 박스라 GT 보다 각 변이 1.5배
+        # 크다 (Data3 실측: GT 198x547 vs MOT 300x749). GT bbox 는 투영된
+        # 관절에서 유도하고 Multi-HMR 2 도 같은 방식이므로, MOT bbox 를 쓰면
+        # IoU 가 0.41~0.48 로 임계값 0.5 아래에 걸려 매칭이 전부 실패한다.
+        # 그러면 추적 품질이 아니라 **bbox 생성 방식 차이**로 점수가 갈린다.
+        #
+        # 모델의 원본 bbox 는 참고용으로 meta 에만 남긴다.
+        bbox = bbox_from_joints2d(joints2d)
+
         mot = parse_mot(os.path.splitext(pts[0])[0] + ".txt")
-        bbox = np.zeros((n, 4), np.float32)
         score = np.ones(n, np.float32)
         n_from_mot = 0
         for i in range(n):
             hit = mot.get((int(frame_ids[i]), int(track_ids[i])))
             if hit:
-                bbox[i] = hit[0]
                 score[i] = hit[1]
                 n_from_mot += 1
-        missing = bbox[:, 2] <= bbox[:, 0]
-        if missing.any():                       # MOT 에 없으면 관절에서 유도
-            bbox[missing] = bbox_from_joints2d(joints2d[missing])
 
         arrays = {
             "frame_ids": frame_ids, "track_ids": track_ids,
@@ -84,7 +89,8 @@ class CoMotionRunner(Runner):
             "bbox": bbox, "score": score,
         }
         return arrays, {"raw_file": os.path.basename(pts[0]),
-                        "bbox_from_mot": int(n_from_mot),
+                        "bbox_source": "joints2d",
+                        "score_from_mot": int(n_from_mot),
                         "camera": "comotion_default_K"}
 
     @staticmethod
