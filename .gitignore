@@ -37,3 +37,7 @@ smpl_eval/report.html
 *.pem
 *.key
 id_rsa*
+
+# SMPL 바디모델 — 라이선스 등록이 필요한 자산. 재배포 금지.
+smpl/
+*.pkl
