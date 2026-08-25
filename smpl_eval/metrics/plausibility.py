@@ -122,7 +122,7 @@ def joint_angle_violations(tracks, min_deg=5.0):
             "violation_rate": float(n_bad / n_tot) if n_tot else float("nan")}
 
 
-def beta_consistency(tracks, jump_sigma=3.0, constant_tol=1e-6):
+def beta_consistency(tracks, jump_sigma=3.0, constant_ratio=0.01):
     """β 는 신원이므로 트랙 내에서 불변이어야 한다. 급변은 ID 스왑 의심.
 
     betas 가 전부 NaN 이면(Anny→SMPL 피팅 실패) available=False 를 돌려
@@ -132,7 +132,7 @@ def beta_consistency(tracks, jump_sigma=3.0, constant_tol=1e-6):
     if not np.isfinite(b).any():
         return {"available": False, "constant_per_track": False,
                 "mean_std": float("nan"), "max_std": float("nan"),
-                "jump_frames": []}
+                "between_track_std": float("nan"), "jump_frames": []}
 
     stds, jumps = [], []
     for _tid, sel, order in _by_track(tracks):
@@ -144,12 +144,19 @@ def beta_consistency(tracks, jump_sigma=3.0, constant_tol=1e-6):
             if np.isfinite(d).any() and d.std() > 0:
                 thr = d.mean() + jump_sigma * d.std()
                 jumps += [int(f[i + 1]) for i in np.where(d > thr)[0]]
-    # β 가 트랙 내내 완전 상수이면 이 지표로는 ID 스왑을 탐지할 수 없다.
-    # CoMotion 은 트랙 생성 시 β 를 확정하고 갱신하지 않는다(실측: 변동 0.0).
-    # float32 반올림 때문에 정확히 0 이 되지는 않으므로 허용오차를 둔다
-    constant = float(np.max(stds)) < constant_tol
+    # β 가 트랙 내내 사실상 상수이면 이 지표로는 ID 스왑을 탐지할 수 없다.
+    # CoMotion 은 트랙 생성 시 β 를 확정하고 갱신하지 않는다.
+    #
+    # 절대 허용오차로 판정하면 안 된다 — float32 반올림만으로도 660프레임
+    # 누적 시 std 가 5e-6 수준으로 나온다(실측). β 는 사람마다 다른 값이므로
+    # **트랙 간 변동 대비 트랙 내 변동의 비율**로 판정한다. 트랙 내 변동이
+    # 트랙 간 변동의 1% 미만이면 실질적으로 상수다.
+    between = float(np.nanstd(b, axis=0).max()) if len(b) > 1 else 0.0
+    within = float(np.max(stds))
+    constant = between > 0 and (within / between) < constant_ratio
     return {"available": True, "constant_per_track": constant,
-            "mean_std": float(np.mean(stds)), "max_std": float(np.max(stds)),
+            "mean_std": float(np.mean(stds)), "max_std": within,
+            "between_track_std": between,
             "jump_frames": sorted(set(jumps))}
 
 
@@ -168,5 +175,7 @@ def all_plausibility(tracks, fps):
         "beta_available": bc["available"],
         "beta_constant_per_track": bc["constant_per_track"],
         "beta_mean_std": bc["mean_std"],
-        "beta_max_std": bc["max_std"], "beta_jump_frames": bc["jump_frames"],
+        "beta_max_std": bc["max_std"],
+        "beta_between_track_std": bc["between_track_std"],
+        "beta_jump_frames": bc["jump_frames"],
     }

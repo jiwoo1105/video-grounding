@@ -101,7 +101,21 @@ def test_all_plausibility_propagates_every_subkey():
         "mean_accel_z", "depth_share",
         "n_violations", "violation_rate",
         "beta_available", "beta_constant_per_track",
-        "beta_mean_std", "beta_max_std", "beta_jump_frames",
+        "beta_mean_std", "beta_max_std", "beta_between_track_std",
+        "beta_jump_frames",
     }
     missing = expected - set(r)
     assert not missing, f"병합에서 누락된 키: {sorted(missing)}"
+
+
+def test_constant_beta_survives_float32_rounding_noise():
+    """트랙 660프레임을 누적하면 float32 반올림만으로 std 가 5e-6 정도 나온다.
+
+    절대 허용오차로 판정하면 상수 β 를 상수가 아니라고 잘못 보고한다
+    (CoMotion 실측에서 실제로 발생). 트랙 간 변동 대비 비율로 판정해야 한다.
+    """
+    t = make_tracks(n_frames=660, n_tracks=3, seed=41)
+    r = beta_consistency(t)
+    assert r["constant_per_track"] is True, r
+    assert r["max_std"] > 0.0          # 반올림 잡음은 실제로 존재한다
+    assert r["between_track_std"] > 0.5  # 사람마다 β 는 크게 다르다
