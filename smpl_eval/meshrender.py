@@ -274,8 +274,9 @@ def _smpl_faces():
     # CoMotion 패키지 안에 동봉된 것을 우선 쓴다 — 추론에 쓰인 바로 그 파일이다.
     try:
         import comotion_demo
-        cands.insert(0, os.path.join(os.path.dirname(comotion_demo.__file__),
-                                     "data", "smpl", "SMPL_NEUTRAL.pkl"))
+        # 네임스페이스 패키지라 __file__ 이 None 일 수 있어 __path__ 를 쓴다.
+        for root in list(getattr(comotion_demo, "__path__", [])):
+            cands.insert(0, os.path.join(root, "data", "smpl", "SMPL_NEUTRAL.pkl"))
     except ImportError:
         pass
     for p in cands:
