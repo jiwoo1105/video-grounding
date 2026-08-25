@@ -69,14 +69,29 @@ class MultiHMR2Runner(Runner):
         return self._session
 
     def _get_regressor(self):
-        """세션이 실제로 쓴 body model 로부터 COCO 회귀기를 만든다.
+        """COCO 회귀기를 만든다.
 
-        정점 수(19,158)가 일치해야 하므로 반드시 같은 모델이어야 한다.
+        세션의 body model 은 GPU 에 올라가 있는데 anny 의 키포인트 로더가
+        CPU 인덱스로 가중치를 뽑아 device mismatch 가 난다(실측). 그래서
+        **같은 설정의 CPU 사본**을 따로 만든다. 설정이 같으면 정점 수가
+        19,158 로 일치하므로 세션이 낸 v3d 에 그대로 적용할 수 있다.
+        (multihmr2 decoder.py 의 body_model 생성 인자와 동일하게 맞춘 것)
         """
         if self._regressor is None:
+            import warnings
+
+            import torch
+            import anny
             from anny import KeypointsRegressor
-            bm = self._get_session().model.full_body_decoder.body_model
-            self._regressor = KeypointsRegressor.coco(bm)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                bm_cpu = anny.create_fullbody_model(
+                    local_changes=True,
+                    pose_parameterization="root_relative",
+                    remove_unattached_vertices=False,
+                ).to(dtype=torch.float32)
+            self._regressor = KeypointsRegressor.coco(bm_cpu)
         return self._regressor
 
     # ── Runner 인터페이스 ────────────────────────────────────────
