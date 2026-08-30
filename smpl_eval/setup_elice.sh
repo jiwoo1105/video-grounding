@@ -137,7 +137,9 @@ if ! ldconfig -p 2>/dev/null | grep -q OSMesa; then
       libosmesa6-dev freeglut3-dev
 fi
 for V in "$VENV_ROOT/comotion" "$VENV_ROOT/multihmr2"; do
-  "$V/bin/pip" install -q "pyopengl==3.1.7" "networkx>=3" trimesh 2>&1 | grep -v "dependency resolver\|incompatible" || true
+  # --no-deps 로 넣으므로 pyrender 의 의존성을 여기서 직접 채운다.
+  "$V/bin/pip" install -q "pyopengl==3.1.7" "networkx>=3" trimesh \
+      freetype-py imageio pyglet 2>&1 | grep -v "dependency resolver\|incompatible" || true
   "$V/bin/pip" install -q --no-deps "pyrender==0.1.45"
   printf "  %-40s " "$(basename "$V") 렌더"
   PYOPENGL_PLATFORM=osmesa "$V/bin/python" - <<'PYCHK'
