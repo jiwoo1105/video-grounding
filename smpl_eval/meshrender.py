@@ -239,7 +239,10 @@ def comotion_source(tracks_path, device="cpu"):
     faces = _smpl_faces()
 
     W, H = meta.get("resolution", [1920, 1080])
-    f = 2.0 * max(W, H)                       # CoMotion 의 get_default_K
+    # 기본은 CoMotion 의 get_default_K. 다만 초점거리를 고쳐 저장한
+    # tracks 라면 그 값으로 그려야 한다 — 사람을 가깝게 옮겨놓고 예전
+    # 초점거리로 투영하면 거대하게 그려진다.
+    f = float(meta.get("fov_fix", {}).get("focal_after") or 2.0 * max(W, H))
     focal, princpt = (f, f), (W / 2.0, H / 2.0)
 
     by_frame = {}

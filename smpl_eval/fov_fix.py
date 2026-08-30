@@ -5,15 +5,25 @@
 ±7.6% 흔들렸고, 그 흔들림이 사람들의 공통 깊이 움직임과 상관 r=+0.49 였다.
 메시 영상이 매 프레임 끊겨 보이는 원인이다.
 
-**왜 z 만 고치면 되는가** — 사람의 3D 크기 H 는 체형에서 정해지고 화면상
-크기 h 는 관측값이므로
+**무엇을 고치는가** — 사람의 3D 크기 H 는 체형에서 정해지고 화면상 크기 h
+는 관측값이므로
 
-    z = f · H / h        ->  z 는 f 에 정비례
-    x = (u - cx) · z / f = (u - cx) · H / h    ->  x 는 f 와 무관
+    z = f · H / h        ->  뿌리 깊이는 f 에 정비례
+    x = (u - cx) · z / f = (u - cx) · H / h    ->  가로 위치는 f 와 무관
 
-실측으로도 log f 대 log z 의 기울기가 +1.016 로 정비례가 확인됐다. 따라서
-z 에만 f_fixed/f_t 를 곱하면 되고, 그렇게 하면 2D 투영이 그대로 보존된다
-(u = x/z·f + cx 에서 z 와 f 가 같은 비율로 커지므로 상쇄).
+실측으로도 log f 대 log z 의 기울기가 +1.016 로 정비례가 확인됐다.
+
+**사람은 통째로 이동하지, 찌그러지지 않는다.** 관절마다 z 에 배율을 곱하면
+몸이 깊이 방향으로 납작해진다 (CoMotion 을 실측 초점거리로 맞출 때 배율이
+0.313 이라 눈에 띄게 뭉개졌다). 체형은 그대로 두고 **뿌리 깊이만 옮기는
+강체 이동**이어야 한다.
+
+    dz = transl_z * (f_fixed/f_t - 1)
+    모든 관절의 z 에 dz 를 더한다 (곱하지 않는다)
+
+**렌더할 때는 반드시 바뀐 초점거리를 써야 한다.** 사람을 가깝게 옮겨놓고
+예전 초점거리로 투영하면 거대하게 그려진다. meta 의 fov_fix.focal_after
+를 렌더러가 읽는다.
 
 **어떤 값으로 고정하는가**
     median  모델 자신의 예측 중앙값. 외부 정보 없이 흔들림만 제거한다.
@@ -59,13 +69,11 @@ def fix_focal(tracks, mode="median", colmap=None, cam=None):
     scale = np.array([f_fix / fx_t.get(int(f), f_fix) for f in tracks["frame_ids"]],
                      dtype=np.float32)
 
-    # z 에만 배율을 적용한다. x, y 는 f 와 무관하므로 건드리지 않는다.
-    for key in ("joints3d", "transl"):
-        a = out[key]
-        if a.ndim == 3:
-            a[..., 2] *= scale[:, None]
-        else:
-            a[..., 2] *= scale
+    # 뿌리 깊이가 f 에 비례해 옮겨간 만큼을 강체 이동으로 적용한다.
+    # 관절마다 곱하면 몸이 깊이 방향으로 납작해지므로 더해야 한다.
+    dz = (out["transl"][:, 2] * (scale - 1.0)).astype(np.float32)
+    out["joints3d"][..., 2] += dz[:, None]
+    out["transl"][:, 2] += dz
     return out, {"focal_before_median": float(np.median(K[:, 0])),
                  "focal_after": f_fix,
                  "focal_cv_before": float(K[:, 0].std() / np.median(K[:, 0])),
