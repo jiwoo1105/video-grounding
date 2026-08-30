@@ -33,9 +33,19 @@ def kept_pairs(tracks_path):
 
 
 def run(video_path, tracks_path, out_path, checkpoint, label,
-        max_frames=None, scale=0.5, tmp_root="~/mh_mesh_tmp"):
+        max_frames=None, scale=0.5, tmp_root=None):
+    """tmp_root 를 주지 않으면 출력 파일 이름으로 고유한 폴더를 만든다.
+
+    두 렌더를 동시에 돌릴 때 임시 폴더를 공유하면 한쪽이 프레임을 추출하는
+    사이 다른 쪽이 그 폴더를 지워 둘 다 실패한다 (실측). 출력마다 다른
+    폴더를 쓰면 병렬 실행이 안전하다.
+    """
     import torch
     from multihmr2 import api
+
+    if tmp_root is None:
+        tag = os.path.splitext(os.path.basename(out_path))[0]
+        tmp_root = f"~/mh_mesh_tmp_{tag}"
 
     pairs, meta = kept_pairs(tracks_path)
     W, H = meta.get("resolution", [1920, 1080])
