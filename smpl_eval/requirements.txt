@@ -2,3 +2,12 @@ numpy>=1.24
 scipy>=1.10
 motmetrics>=1.4
 pytest>=7.0
+
+# CoMotion 의 장면전환 감지가 쓰는 라이브러리. 0.7 에서 API 가 바뀌어
+# process_frame(frame_num, image) 의 첫 인자를 int 로 받던 것이 Timecode
+# 객체를 요구하게 되었다. CoMotion 은 int 를 넘기므로 0.7 이상에서는
+#   AttributeError: 'int' object has no attribute 'frame_rate'
+# 로 죽는다 (실측). CoMotion 이 setup.py 에서 상한 없이 끌어오므로
+# 여기서 눌러 준다.
+scenedetect<0.7
+
