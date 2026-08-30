@@ -24,7 +24,7 @@ mkdir -p "$ENV_ROOT" "$VENV_ROOT"
 
 # ── 1. 시스템 패키지 ──────────────────────────────────────────────
 echo
-echo "=== 1/5  시스템 패키지 ==="
+echo "=== 1/6  시스템 패키지 ==="
 if ! command -v ffmpeg >/dev/null; then
   sudo apt-get update -qq
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
@@ -34,7 +34,7 @@ echo "  ffmpeg: $(ffmpeg -version 2>&1 | head -1)"
 
 # ── 2. CoMotion ──────────────────────────────────────────────────
 echo
-echo "=== 2/5  CoMotion (Apple, ICLR 2025) ==="
+echo "=== 2/6  CoMotion (Apple, ICLR 2025) ==="
 cd "$ENV_ROOT"
 [ -d ml-comotion ] || git clone --depth 1 https://github.com/apple/ml-comotion.git
 
@@ -59,7 +59,7 @@ fi
 
 # ── 3. Multi-HMR 2 ───────────────────────────────────────────────
 echo
-echo "=== 3/5  Multi-HMR 2 (NAVER, 2026) ==="
+echo "=== 3/6  Multi-HMR 2 (NAVER, 2026) ==="
 cd "$ENV_ROOT"
 [ -d multi-hmr2 ] || git clone --depth 1 https://github.com/naver/multi-hmr2.git
 
@@ -74,7 +74,7 @@ cd multi-hmr2
 
 # ── 4. SMPL 바디모델 ─────────────────────────────────────────────
 echo
-echo "=== 4/5  SMPL 바디모델 확인 ==="
+echo "=== 4/6  SMPL 바디모델 확인 ==="
 SMPL_DST="$ENV_ROOT/ml-comotion/src/comotion_demo/data/smpl/SMPL_NEUTRAL.pkl"
 if [ ! -f "$SMPL_DST" ]; then
   mkdir -p "$(dirname "$SMPL_DST")"
@@ -101,7 +101,7 @@ echo "  SMPL_NEUTRAL.pkl OK"
 
 # ── 5. 평가 파이프라인 + 검증 ────────────────────────────────────
 echo
-echo "=== 5/5  평가 파이프라인 의존성 ==="
+echo "=== 5/6  평가 파이프라인 의존성 ==="
 for V in "$VENV_ROOT/comotion" "$VENV_ROOT/multihmr2"; do
   "$V/bin/pip" install -q -r "$REPO_ROOT/smpl_eval/requirements.txt"
 done
@@ -116,6 +116,41 @@ ok = torch.cuda.is_available()
 print(f\"torch {torch.__version__} cuda={ok}\", end='')
 print(f\" {torch.cuda.get_device_name(0)}\" if ok else \"  !! GPU 미인식\")
 "
+done
+
+# ── 6. 메시 렌더링 (osmesa) ──────────────────────────────────────
+#
+# MIG 에는 하드웨어 EGL 이 없어 GPU 오프스크린 OpenGL 을 쓸 수 없다.
+# osmesa(CPU 소프트웨어 래스터라이저)로 우회한다. 느리지만(2K·10명
+# 기준 프레임당 약 0.85초) 결과는 GPU 렌더와 같다.
+#
+# 버전이 셋 다 중요하다 (전부 실측으로 확인):
+#   PyOpenGL 3.1.0  pyrender 가 요구하는 핀이지만 osmesa 컨텍스트 생성에
+#                   필요한 OSMesaCreateContextAttribs 심볼이 없다 → 3.1.7
+#   pyrender 0.1.18 pip 가 위 핀 충돌을 피하려 고른 구버전. IntrinsicsCamera
+#                   가 없다 → --no-deps 로 0.1.45 강제
+#   networkx 1.x    python 3.10 에서 `from collections import Mapping` 실패
+echo
+echo "=== 6/6  메시 렌더링 (osmesa) ==="
+if ! ldconfig -p 2>/dev/null | grep -q OSMesa; then
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+      libosmesa6-dev freeglut3-dev
+fi
+for V in "$VENV_ROOT/comotion" "$VENV_ROOT/multihmr2"; do
+  "$V/bin/pip" install -q "pyopengl==3.1.7" "networkx>=3" trimesh 2>&1 | grep -v "dependency resolver\|incompatible" || true
+  "$V/bin/pip" install -q --no-deps "pyrender==0.1.45"
+  printf "  %-40s " "$(basename "$V") 렌더"
+  PYOPENGL_PLATFORM=osmesa "$V/bin/python" - <<'PYCHK'
+import numpy as np, trimesh, pyrender
+r = pyrender.OffscreenRenderer(64, 64)
+sc = pyrender.Scene()
+sc.add(pyrender.Mesh.from_trimesh(trimesh.creation.icosphere(radius=0.5)))
+p = np.eye(4); p[2, 3] = 3
+sc.add(pyrender.IntrinsicsCamera(fx=60, fy=60, cx=32, cy=32), pose=p)
+sc.add(pyrender.DirectionalLight(intensity=3.0), pose=p)
+col, depth = r.render(sc)
+print(f"OK  (메시 픽셀 {int((depth>0).sum())})")
+PYCHK
 done
 
 echo
