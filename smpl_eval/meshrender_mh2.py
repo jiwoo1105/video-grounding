@@ -51,6 +51,12 @@ def run(video_path, tracks_path, out_path, checkpoint, label,
         sh(["ffmpeg", "-v", "error", "-y", "-i", os.path.abspath(video_path),
             "-frames:v", str(max_frames), "-c", "copy", src])
 
+    # tracks 가 초점거리 보정본이면 그 값으로 렌더해야 한다.
+    f_fix = meta.get("fov_fix", {}).get("focal_after")
+    if f_fix:
+        f_fix = float(f_fix)
+        print(f"초점거리 고정 렌더: {f_fix:.1f}")
+
     session = api.init_hmr_session(checkpoint)
     faces = session.model.full_body_decoder.body_model.faces
     faces = np.asarray(faces.cpu() if torch.is_tensor(faces) else faces, np.int32)
@@ -77,6 +83,17 @@ def run(video_path, tracks_path, out_path, checkpoint, label,
         princpt = (float(K[0, 2]) * s, float(K[1, 2]) * s)
         v3d = p.v3d.detach().cpu().float().numpy()
         tid = np.asarray(p.track_id).reshape(-1).astype(int)
+
+        if f_fix is not None:
+            # 초점거리를 고정한 tracks 로 렌더하는 경우. 사람을 통째로
+            # 깊이 방향으로 옮기고, 반드시 바뀐 초점거리로 투영한다.
+            # (옮겨만 놓고 예전 초점거리로 그리면 거대하게 나온다)
+            ratio = f_fix / max(focal[0], 1e-9)
+            pz = p.transl_pelvis.detach().cpu().float().numpy()[:, 2]
+            v3d = v3d.copy()
+            v3d[..., 2] += (pz * (ratio - 1.0))[:, None]
+            focal = (f_fix, f_fix)
+
         rows = [(int(tid[i]), v3d[i].astype(np.float16))
                 for i in range(n) if (t, int(tid[i])) in pairs]
         if rows:
