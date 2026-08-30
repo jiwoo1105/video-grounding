@@ -94,11 +94,24 @@ def main(argv=None):
           f"(변동 {info['focal_cv_before']:.2%})  ->  {info['focal_after']:.1f} (고정)")
     print(f"깊이 배율  {info['scale_min']:.3f} ~ {info['scale_max']:.3f}")
     print()
-    print(f"{'':14s} {'가속 xy':>9s} {'가속 z':>10s}")
-    print(f"{'보정 전':14s} {j0['mean_accel_xy']:9.2f} {j0['mean_accel_z']:10.2f}")
-    print(f"{'보정 후':14s} {j1['mean_accel_xy']:9.2f} {j1['mean_accel_z']:10.2f}")
-    d = 1 - j1["mean_accel_z"] / max(j0["mean_accel_z"], 1e-9)
-    print(f"{'깊이 지터':14s} {d:+.1%}")
+    # 절대 지터(mm/frame^2)는 깊이 스케일에 비례하므로, 초점거리를 바꿔
+    # 깊이가 통째로 줄면 지터도 같은 비율로 준다. 그것은 흔들림이 나아진
+    # 것이 아니라 단위가 작아진 것이다. 중앙 깊이로 나눠 함께 본다.
+    z0 = float(np.nanmedian(np.abs(t["joints3d"][..., 2])))
+    z1 = float(np.nanmedian(np.abs(t2["joints3d"][..., 2])))
+    r0 = j0["mean_accel_z"] / max(z0, 1e-9)
+    r1 = j1["mean_accel_z"] / max(z1, 1e-9)
+
+    print(f"{'':10s} {'가속 xy':>9s} {'가속 z':>10s} {'중앙깊이':>10s} {'상대 z지터':>11s}")
+    print(f"{'보정 전':10s} {j0['mean_accel_xy']:9.2f} {j0['mean_accel_z']:10.2f}"
+          f" {z0:10.1f} {r0:11.5f}")
+    print(f"{'보정 후':10s} {j1['mean_accel_xy']:9.2f} {j1['mean_accel_z']:10.2f}"
+          f" {z1:10.1f} {r1:11.5f}")
+    print(f"{'변화':10s} {'':9s} {1 - j1['mean_accel_z']/max(j0['mean_accel_z'],1e-9):+9.1%}"
+          f" {z1/max(z0,1e-9):9.3f}배 {1 - r1/max(r0,1e-9):+10.1%}")
+    print()
+    print("  상대 z지터 = 가속 z / 중앙 깊이.  깊이 스케일이 바뀌어도 공평하게")
+    print("  비교된다. 흔들림이 실제로 줄었는지는 이 값을 봐야 한다.")
 
     m2 = dict(m)
     m2["postprocess"] = f"{m.get('postprocess', '')}+fov_fix_{a.mode}".lstrip("+")
